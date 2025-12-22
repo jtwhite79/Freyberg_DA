@@ -35,9 +35,38 @@ if "windows" in platform.platform().lower():
 da_path = os.path.join(bin_path, "pestpp-da" + exe)
 ies_path = os.path.join(bin_path, "pestpp-ies" + exe)
 
-keep = ['arrobs_head_k:0_i:13_j:10', 'arrobs_head_k:2_i:2_j:9', 'arrobs_head_k:2_i:33_j:7', 'sfr_usecol:gage_1']
-keep_labels = ["gw_1","gw_2","gw_3","sw_1"]
-keep_units = ["$m$","$m$","$m$","$\\frac{m^3}{d}$"]
+#keep = ['arrobs_head_k:0_i:13_j:10', 'arrobs_head_k:2_i:2_j:9', 'arrobs_head_k:2_i:33_j:7', 'sfr_otype:lst_usecol:gage_1']
+#keep_labels = ["gw_1","gw_2","gw_3","sw_1"]
+keep = ['oname:hds_otype:lst_usecol:arrobs_head_k:0_i:13_j:10',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:0_i:15_j:16',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:0_i:21_j:10',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:0_i:22_j:15',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:0_i:24_j:4',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:0_i:26_j:6',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:0_i:29_j:15',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:0_i:2_j:15',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:0_i:2_j:9',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:0_i:33_j:7',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:0_i:3_j:8',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:13_j:10',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:15_j:16',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:21_j:10',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:22_j:15',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:24_j:4',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:26_j:6',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:29_j:15',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:2_j:15',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:2_j:9',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:33_j:7',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:34_j:10',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:3_j:8',
+ 'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:9_j:1',
+ 'oname:cnc_otype:lst_usecol:arrobs_conc_k:0_i:26_j:11',
+ 'sfr_otype:lst_usecol:gage_1']
+keep_labels = keep.copy()
+keep_units = ["$m$" for _ in keep]
+keep_units[-1] = "$\\frac{m^3}{d}$"
+#keep_units = ["$m$","$m$","$m$","$\\frac{m^3}{d}$"]
 keep_dict = {k:l for k,l in zip(keep,keep_labels)}
 keep_dict2 = {k:l for k,l in zip(keep,keep_units)}
 
@@ -50,7 +79,7 @@ keep_dict2 = {k:l for k,l in zip(keep,keep_units)}
 #             "cum_mass_usecol:wel_out","arrobs_conc_k:2_i:26_j:11",]
 # forecast_labels = ["tailwater sw-gw exchg","headwater sw-gw exchg","gw forecast","cumulative well mass removed",
 #                   "gw conc"]
-forecast = ["sfr_usecol:tailwater","sfr_usecol:headwater","arrobs_head_k:0_i:9_j:1"]
+forecast = ["oname:sfr_otype:lst_usecol:tailwater","oname:sfr_otype:lst_usecol:tailwater","arrobs_head_k:0_i:9_j:1"]
 forecast_labels = ["tailwater sw-gw exchg","headwater sw-gw exchg","gw forecast"]
 forecast_dict = {k:l for k,l in zip(forecast,forecast_labels)}
 forecast_units = ["$\\frac{m^3}{d}$","$\\frac{m^3}{d}$","$m$"]
@@ -113,12 +142,12 @@ def compare_mf6_freyberg(num_workers=10,num_reals=100,num_replicates=100,use_sim
         ies_pst.pestpp_options["ies_drop_conflicts"] = False
         ies_pst.pestpp_options["ies_num_reals"] = num_reals
         ies_pst.pestpp_options["ies_use_mda"] = False
-        ies_pst.control_data.noptmax = 3
+        ies_pst.control_data.noptmax = 10
 
         #mark the future pars fixed
         par = ies_pst.parameter_data
-        rch_par = par.loc[par.parnme.str.contains("direct_const_rch_recharge"),:].copy()
-        rch_par.loc[:,"kper"] = rch_par.parnme.apply(lambda x: int(x.split('_')[4]) - 1)
+        rch_par = par.loc[par.parnme.str.contains("pname:rch_recharge"),:].copy()
+        rch_par.loc[:,"kper"] = rch_par.parnme.apply(lambda x: int(x.split('_')[2]) - 1)
         rch_par = rch_par.loc[rch_par.kper>=13,"parnme"]
         par.loc[rch_par,"partrans"] = "fixed"
 
@@ -169,8 +198,11 @@ def compare_mf6_freyberg(num_workers=10,num_reals=100,num_replicates=100,use_sim
 
         if run_ies:
             pyemu.os_utils.start_workers(ies_t_d, 'pestpp-ies', "freyberg.pst", port=port,
-                                      num_workers=num_workers, master_dir=m_ies_dir, verbose=True)
-
+                                     num_workers=num_workers, master_dir=m_ies_dir, verbose=True)
+            # if os.path.exists(m_ies_dir):
+            #     shutil.rmtree(m_ies_dir)
+            # shutil.copytree(ies_t_d,m_ies_dir)
+            # pyemu.os_utils.run("pestpp-ies freyberg.pst",cwd=m_ies_dir)
         shutil.rmtree(ies_t_d)
 
 
@@ -782,7 +814,7 @@ def setup_interface(org_ws, num_reals=10):
     strt_pars = par.loc[par.parnme.str.contains('|'.join(searchfor)), "parnme"]
 
     # set the first stress period to no pumping
-    first_wpar = "twel_mlt_0_inst:0_usecol:3"
+    first_wpar = "pname:twel_mlt_0_inst:0_ptype:cn_usecol:3_pstyle:m"
     assert first_wpar in set(pst.par_names)
     pf.pst.parameter_data.loc[first_wpar,"partrans"] = "fixed"
     pf.pst.parameter_data.loc[first_wpar, "parval1"] = 5.0e-10
@@ -795,7 +827,10 @@ def setup_interface(org_ws, num_reals=10):
     if "daily" in template_ws:
         m_lrc = (m_lrc[0],m_lrc[1]*3,m_lrc[2]*3)
     if new_wpar.shape[0] > 0:
-        new_wpar = "wel_grid_inst:0_usecol:3_idx0:{0}_idx1:{1}_idx2:{2}".format(m_lrc[0]-1,m_lrc[1]-1,m_lrc[2]-1)
+        #new_wpar = "wel_grid_inst:0_usecol:3_idx0:{0}_idx1:{1}_idx2:{2}".format(m_lrc[0]-1,m_lrc[1]-1,m_lrc[2]-1)
+        new_wpar = "pname:wel_grid_inst:0_ptype:gr_usecol:3_pstyle:m_idx0:{0}_idx1:{1}_idx2:{2}".format(m_lrc[0]-1,m_lrc[1]-1,m_lrc[2]-1)
+        #print(new_wpar)
+        #print(pf.pst.par_names)
         assert new_wpar in set(pf.pst.par_names),new_wpar
     pf.pst.parameter_data.loc[new_wpar, "partrans"] = "fixed"
     pf.pst.parameter_data.loc[new_wpar, "parval1"] = 1.0
@@ -1178,7 +1213,7 @@ def monthly_ies_to_da(org_d,include_est_states=False):
     d = pepars.symmetric_difference(pstpars)
     missing = par.loc[par.parnme.apply(lambda x: x in d), "parnme"]
     mvals = par.parval1.loc[missing]
-    pe.loc[:, missing] = np.NaN
+    pe.loc[:, missing] = np.nan
     for idx in pe.index:
         pe.loc[idx, missing] = mvals
     pe.to_binary(os.path.join(t_d, "prior.jcb"))
@@ -1424,24 +1459,43 @@ def map_complex_to_simple_bat(c_d,b_d,real_idx):
     # set some weights - only the first 12 months (not counting spin up time)
     # just picked weights that seemed to balance-ish the one realization I looked at...
     obs.loc[:,"weight"] = 0.0
+    obs.loc[:,"lower_bound"] = np.nan
+    obs["distance"] = np.nan
+    obs["standard_deviation"] = np.nan
+    struct_dict = {}
     for k in keep.copy():
         if is_1_lay:
             k = k.replace("k:2","k:0")
         kobs = obs.loc[obs.obsnme.str.contains(k),:].copy()
+        assert kobs.shape[0] >0
         kobs.loc[:,"time"] = kobs.time.apply(float)
         kobs.sort_values(by="time",inplace=True)
+        obs.loc[kobs.obsnme,"distance"] = kobs.time.astype(float).values
         if "gage" in k:
-            obs.loc[kobs.obsnme[1:13], "weight"] = 0.005
-        else:
-            obs.loc[kobs.obsnme[1:13],"weight"] = 2.0
+            obs.loc[kobs.obsnme[1:13], "standard_deviation"] = kobs.loc[kobs.obsnme.iloc[1:13],"obsval"].values * 0.2
 
-    assert bpst.nnz_obs == 48,bpst.nnz_obs
+            obs.loc[kobs.obsnme[1:13], "weight"] = 0.005
+            obs.loc[kobs.obsnme[1:13], "lower_bound"] = 0.0
+
+
+        else:
+            obs.loc[kobs.obsnme[1:13], "standard_deviation"] = 1.0
+            obs.loc[kobs.obsnme[1:13],"weight"] = 1.0
+        v = pyemu.geostats.ExpVario(contribution=1.0,a=365*1.5)
+        gs = pyemu.geostats.GeoStruct(variograms=v)
+        struct_dict[gs] = kobs.obsnme.iloc[1:13].to_list()
+    assert bpst.nnz_obs == 180,bpst.nnz_obs
+
+    noise = pyemu.helpers.autocorrelated_draw(pst=bpst,struct_dict=struct_dict,num_reals=1000)
+
 
     # setup a template dir for this complex model realization
     t_d = b_d + "_{0}".format(real_idx)
     if os.path.exists(t_d):
         shutil.rmtree(t_d)
     shutil.copytree(b_d,t_d)
+    noise.to_csv(os.path.join(t_d,"noise.csv"))
+    bpst.pestpp_options["ies_obs_en"] = "noise.csv"
     bpst.write(os.path.join(t_d,"freyberg.pst"),version=2)
     return t_d
 
@@ -1736,7 +1790,7 @@ def plot_domain():
             bbox=dict(facecolor='w', alpha=1, edgecolor="none", pad=1))
 
     top = m.dis.top.array.reshape(ib.shape)
-    top[top<0] = np.NaN
+    top[top<0] = np.nan
     cb = ax.imshow(top,extent=m.modelgrid.extent,cmap="bone")
     cb = plt.colorbar(cb,pad=0.01)
     cb.set_label("top $m$")
@@ -3718,53 +3772,55 @@ def plot_obs_v_sim_pub(subdir=".",post_iter=None):
     cobs.loc[:, "time"] = cobs.time.apply(float)
     c_oe = pd.read_csv(os.path.join(c_m_d, "freyberg.0.obs.csv"), index_col=0)
     cw_cols = c_oe.columns.map(lambda x: "mass" in x)
-    c_oe.loc[:, cw_cols] = c_oe.loc[:, cw_cols].apply(np.log10)
+    #print(c_oe.loc[:, cw_cols])
+    #exit()
+    #c_oe.loc[:, cw_cols] = c_oe.loc[:, cw_cols].apply(np.log10)
     pname = os.path.join('.', "obs_v_sim_pub.pdf")
     if post_iter is not None:
         pname = os.path.join('.', "obs_v_sim_postier_{0}.pdf".format(post_iter))
 
     m = 1
     pp = PdfPages(pname)
-    for ireal in range(12,13):
+    for ireal in range(3):
         s_b_m_d = os.path.join('.', "monthly_model_files_master_{0}".format(ireal))
         s_s_m_d = os.path.join('.', "seq_monthly_model_files_master_{0}".format(ireal))
-        if not os.path.exists(s_s_m_d) or not os.path.exists(s_b_m_d):
-            break
-        try:
-            s_b_pst = pyemu.Pst(os.path.join(s_b_m_d, "freyberg.pst"))
-            s_b_oe_pr = pd.read_csv(os.path.join(s_b_m_d, "freyberg.0.obs.csv"), index_col=0)
-            sw_cols = s_b_oe_pr.columns.map(lambda x: "mass" in x)
-            s_b_oe_pr.loc[:, sw_cols] = s_b_oe_pr.loc[:, sw_cols].apply(np.log10)
-            bpost_iter = s_b_pst.control_data.noptmax
-            if post_iter is not None:
-                bpost_iter = post_iter
-            s_b_oe_pt = pd.read_csv(os.path.join(s_b_m_d, "freyberg.{0}.obs.csv".format(bpost_iter)),
-                                    index_col=0)
-            s_b_oe_pt.loc[:, sw_cols] = s_b_oe_pt.loc[:, sw_cols].apply(np.log10)
-            s_s_pst = pyemu.Pst(os.path.join(s_s_m_d, "freyberg.pst"))
-            seq_oe_files_pr = [f for f in os.listdir(s_s_m_d) if
-                               f.endswith("0.obs.csv") and f.startswith("freyberg")]
-            spost_iter = s_s_pst.control_data.noptmax
-            if post_iter is not None:
-                spost_iter = post_iter
-            seq_oe_files_pt = [f for f in os.listdir(s_s_m_d) if
-                               f.endswith("{0}.obs.csv".format(spost_iter)) and f.startswith("freyberg")]
+        #if not os.path.exists(s_s_m_d) or not os.path.exists(s_b_m_d):
+        #    break
+        #try:
+        s_b_pst = pyemu.Pst(os.path.join(s_b_m_d, "freyberg.pst"))
+        s_b_oe_pr = pd.read_csv(os.path.join(s_b_m_d, "freyberg.0.obs.csv"), index_col=0)
+        sw_cols = s_b_oe_pr.columns.map(lambda x: "mass" in x)
+        #s_b_oe_pr.loc[:, sw_cols] = s_b_oe_pr.loc[:, sw_cols].apply(np.log10)
+        bpost_iter = s_b_pst.control_data.noptmax
+        if post_iter is not None:
+            bpost_iter = post_iter
+        s_b_oe_pt = pd.read_csv(os.path.join(s_b_m_d, "freyberg.{0}.obs.csv".format(bpost_iter)),
+                                index_col=0)
+        #s_b_oe_pt.loc[:, sw_cols] = s_b_oe_pt.loc[:, sw_cols].apply(np.log10)
+        #s_s_pst = pyemu.Pst(os.path.join(s_s_m_d, "freyberg.pst"))
+        #seq_oe_files_pr = [f for f in os.listdir(s_s_m_d) if
+        #                   f.endswith("0.obs.csv") and f.startswith("freyberg")]
+        #spost_iter = s_s_pst.control_data.noptmax
+        #if post_iter is not None:
+        #    spost_iter = post_iter
+        #seq_oe_files_pt = [f for f in os.listdir(s_s_m_d) if
+        #                   f.endswith("{0}.obs.csv".format(spost_iter)) and f.startswith("freyberg")]
 
-            s_s_oe_dict_pr = {int(f.split(".")[1]): pd.read_csv(os.path.join(s_s_m_d, f), index_col=0) for f in
-                              seq_oe_files_pr}
-            s_s_oe_dict_pt = {int(f.split(".")[1]): pd.read_csv(os.path.join(s_s_m_d, f), index_col=0) for f in
-                              seq_oe_files_pt}
-            for key, df in s_s_oe_dict_pr.items():
-                log_cols = df.columns.map(lambda x: "mass" in x)
-                df.loc[:, log_cols] = df.loc[:, log_cols].apply(np.log10)
-                s_s_oe_dict_pr[key] = df
-            for key, df in s_s_oe_dict_pt.items():
-                log_cols = df.columns.map(lambda x: "mass" in x)
-                df.loc[:, log_cols] = df.loc[:, log_cols].apply(np.log10)
-                s_s_oe_dict_pt[key] = df
+        #s_s_oe_dict_pr = {int(f.split(".")[1]): pd.read_csv(os.path.join(s_s_m_d, f), index_col=0) for f in
+        #                  seq_oe_files_pr}
+        #s_s_oe_dict_pt = {int(f.split(".")[1]): pd.read_csv(os.path.join(s_s_m_d, f), index_col=0) for f in
+        #                  seq_oe_files_pt}
+        #for key, df in s_s_oe_dict_pr.items():
+        #    log_cols = df.columns.map(lambda x: "mass" in x)
+        #    df.loc[:, log_cols] = df.loc[:, log_cols].apply(np.log10)
+        #    s_s_oe_dict_pr[key] = df
+        #for key, df in s_s_oe_dict_pt.items():
+        #    log_cols = df.columns.map(lambda x: "mass" in x)
+        #    df.loc[:, log_cols] = df.loc[:, log_cols].apply(np.log10)
+        #    s_s_oe_dict_pt[key] = df
 
-        except:
-            break
+        #except:
+        #   break
 
         ognames = keep.copy()
         ognames.extend(forecast)
@@ -3814,32 +3870,33 @@ def plot_obs_v_sim_pub(subdir=".",post_iter=None):
              s_b_oe_pt.index]
             ax.plot(cgobs.time, c_oe.loc[c_oe.index[ireal], cgobs.obsnme], "r", lw=2.0, alpha=0.85)
             ax.scatter(sgnzobs.time, sgnzobs.obsval, marker="^", color="r")
-            ax = axes[1]
+            
+            #ax = axes[1]
 
-            seq_name = k0ogname
-            if "arrobs" not in k0ogname:
-                seq_name = k0ogname + "_time:10000.0"
-            print(ireal, seq_name)
-            for itime, time in enumerate(sgobs.time):
-                # itime += 1
+            # seq_name = k0ogname
+            # if "arrobs" not in k0ogname:
+            #     seq_name = k0ogname + "_time:10000.0"
+            # print(ireal, seq_name)
+            # for itime, time in enumerate(sgobs.time):
+            #     # itime += 1
 
-                if itime in s_s_oe_dict_pr:
-                    oe = s_s_oe_dict_pr[itime]
-                    # print(oe.loc[:,seq_name])
-                    ax.scatter([time for _ in range(oe.shape[0])], oe.loc[:, seq_name], marker=".", color="0.5",
-                               alpha=0.5)
-                if itime in s_s_oe_dict_pt:
-                    oe = s_s_oe_dict_pt[itime]
-                    # print(oe.loc[:,seq_name])
-                    ax.scatter([time for _ in range(oe.shape[0])], oe.loc[:, seq_name], marker=".", color="b",
-                               alpha=0.5)
-            ax.plot(cgobs.time, c_oe.loc[c_oe.index[ireal], cgobs.obsnme], "r", lw=2.0, alpha=0.85)
-            ax.scatter(sgnzobs.time, sgnzobs.obsval, marker="^", color="r")
-            ax.set_title(
-                "B) sequential formulation {0}, replicate {1}, coarse scenario".format(label_dict[ogname], c_oe.index[ireal]),
-                loc="left")
-            ax.set_xlabel("Simulation Time (days)")
-            ax.set_ylabel("{0}".format(units_dict[ogname]))
+            #     if itime in s_s_oe_dict_pr:
+            #         oe = s_s_oe_dict_pr[itime]
+            #         # print(oe.loc[:,seq_name])
+            #         ax.scatter([time for _ in range(oe.shape[0])], oe.loc[:, seq_name], marker=".", color="0.5",
+            #                    alpha=0.5)
+            #     if itime in s_s_oe_dict_pt:
+            #         oe = s_s_oe_dict_pt[itime]
+            #         # print(oe.loc[:,seq_name])
+            #         ax.scatter([time for _ in range(oe.shape[0])], oe.loc[:, seq_name], marker=".", color="b",
+            #                    alpha=0.5)
+            # ax.plot(cgobs.time, c_oe.loc[c_oe.index[ireal], cgobs.obsnme], "r", lw=2.0, alpha=0.85)
+            # ax.scatter(sgnzobs.time, sgnzobs.obsval, marker="^", color="r")
+            # ax.set_title(
+            #     "B) sequential formulation {0}, replicate {1}, coarse scenario".format(label_dict[ogname], c_oe.index[ireal]),
+            #     loc="left")
+            # ax.set_xlabel("Simulation Time (days)")
+            # ax.set_ylabel("{0}".format(units_dict[ogname]))
             obs = mpatches.Patch(color='red', label='Replicate Simulated Quantity')
             pr = mpatches.Patch(color='grey', label='Prior Realization Simulated Quantity')
             pt = mpatches.Patch(color='blue', label='Posterior Realization Simulated Quantity')
@@ -3866,7 +3923,7 @@ def plot_obs_v_sim_pub(subdir=".",post_iter=None):
     cobs.loc[:, "time"] = cobs.time.apply(float)
     c_oe = pd.read_csv(os.path.join(c_m_d, "freyberg.0.obs.csv"), index_col=0)
     cw_cols = c_oe.columns.map(lambda x: "mass" in x)
-    c_oe.loc[:, cw_cols] = c_oe.loc[:, cw_cols].apply(np.log10)
+    #c_oe.loc[:, cw_cols] = c_oe.loc[:, cw_cols].apply(np.log10)
 
     if post_iter is not None:
         pname = os.path.join(subdir, "obs_v_sim_postier_{0}.pdf".format(post_iter))
@@ -4009,36 +4066,37 @@ if __name__ == "__main__":
 
     #### MAIN WORKFLOW ####
     #coarse scenario
-    sync_phase(s_d = "monthly_model_files_1lyr_trnsprt_org")
-    add_new_stress(m_d_org = "monthly_model_files_1lyr_trnsprt")
-    c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=50)
+    #sync_phase(s_d = "monthly_model_files_1lyr_trnsprt_org")
+    #add_new_stress(m_d_org = "monthly_model_files_1lyr_trnsprt")
+    #c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=50)
     b_d = setup_interface("monthly_model_files_1lyr_trnsprt_newstress",num_reals=50)
-    s_d = monthly_ies_to_da(b_d,include_est_states=False)
+    
+    ##s_d = monthly_ies_to_da(b_d,include_est_states=False)
 
-    m_c_d = run_complex_prior_mc(c_d,num_workers=10)
+    #m_c_d = run_complex_prior_mc(c_d,num_workers=10)
 
     b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
-    s_d = map_simple_bat_to_seq(b_d,"seq_monthly_model_files_template")
-
-    compare_mf6_freyberg(num_workers=10, num_replicates=50,num_reals=50,use_sim_states=True,
-                       run_ies=True,run_da=True,adj_init_states=True)
+    #s_d = map_simple_bat_to_seq(b_d,"seq_monthly_model_files_template")
+   
+    compare_mf6_freyberg(num_workers=20, num_replicates=10,num_reals=50,use_sim_states=True,
+                       run_ies=True,run_da=False,adj_init_states=True)
 
     #fixed well scenario
     sync_phase(s_d = "monthly_model_files_1lyr_trnsprt_org")
     add_new_stress(m_d_org = "monthly_model_files_1lyr_trnsprt")
     b_d = setup_interface("monthly_model_files_1lyr_trnsprt_newstress",num_reals=50)
     reduce_simple_pars(b_d)
-    s_d = monthly_ies_to_da(b_d,include_est_states=False)
+    #s_d = monthly_ies_to_da(b_d,include_est_states=False)
 
     b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
-    s_d = map_simple_bat_to_seq(b_d,"seq_monthly_model_files_template")
+    #s_d = map_simple_bat_to_seq(b_d,"seq_monthly_model_files_template")
 
-    compare_mf6_freyberg(num_workers=10, num_replicates=50,num_reals=50,use_sim_states=True,
-                       run_ies=True,run_da=True,adj_init_states=True)
+    compare_mf6_freyberg(num_workers=20, num_replicates=10,num_reals=50,use_sim_states=True,
+                       run_ies=True,run_da=False,adj_init_states=True)
 
 
     # plotting
-    plot_domain()
+    #plot_domain()
     plot_obs_v_sim_pub(subdir="missing_wel_pars")
     plot_obs_v_sim3(subdir="missing_wel_pars")
     plot_s_vs_s_pub_2(summarize=True)

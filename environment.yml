@@ -1,0 +1,25 @@
+name: bcdsi
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  # required
+  - python >= 3.10
+  - libopenblas < 0.3.30
+  - numpy
+  - pandas
+  # optional
+  - matplotlib
+  - pyshp
+  - jinja2
+  - shapely
+  - pyproj
+  - flopy
+  - scikit-learn
+  - pip
+  - ffmpeg
+  - jupyter
+  - jupytext
+  - jupyterlab
+  - pip:
+       - pypestutils
