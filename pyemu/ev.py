@@ -23,7 +23,7 @@ class ErrVar(LinearAnalysis):
             the noise covariance matrix is loaded from a file using
             the file extension (".jcb"/".jco" for binary, ".cov"/".mat" for PEST-style ASCII matrix,
             or ".unc" for uncertainty files).  If `None`, the noise covariance matrix is
-            constructed from the obsevation weights in `LinearAnalysis.pst`.  Can also be a `pyemu.Cov` instance
+            constructed from the observation weights in `LinearAnalysis.pst`.  Can also be a `pyemu.Cov` instance
         forecasts (varies, optional): forecast sensitivity vectors.  If `str`, first an observation name is assumed (a row
             in `LinearAnalysis.jco`).  If that is not found, a filename is assumed and predictions are
             loaded from a file using the file extension.  If [`str`], a list of observation names is assumed.
@@ -301,7 +301,7 @@ class ErrVar(LinearAnalysis):
 
         Returns:
             `pandas.DataFrame`: a multi-indexed pandas dataframe summarizing each of the
-            error variance terms for each nominated forecast. Rows are the singluar values
+            error variance terms for each nominated forecast. Rows are the singular values
             tested, columns are a multi-index of forecast name and error variance term number
             (e.g. 1,2 or (optionally) 3).
 
@@ -360,7 +360,7 @@ class ErrVar(LinearAnalysis):
 
     def variance_at(self, singular_value):
         """get the error variance of all three error variance terms at a
-         given singluar value
+         given singular value
 
         Args:
             singular_value (`int`): singular value to test
@@ -517,7 +517,7 @@ class ErrVar(LinearAnalysis):
             results = {}
             for prediction in self.predictions_iter:
                 results[("first", prediction.col_names[0])] = float(
-                    (prediction.T * first_term * prediction).x
+                    (prediction.T * first_term * prediction).x.squeeze()
                 )
             self.log("calc first term parameter @" + str(singular_value))
             return results
@@ -598,7 +598,7 @@ class ErrVar(LinearAnalysis):
             results = {}
             for prediction in self.predictions_iter:
                 results[("second", prediction.col_names[0])] = float(
-                    (prediction.T * second_term * prediction).x
+                    (prediction.T * second_term * prediction).x.squeeze()
                 )
             self.log("calc second term prediction @" + str(singular_value))
             return results
@@ -678,7 +678,7 @@ class ErrVar(LinearAnalysis):
                     (prediction.T * self.G(singular_value) * self.omitted_jco)
                     - omitted_prediction.T
                 ).T
-                result = float((p.T * self.omitted_parcov * p).x)
+                result = float((p.T * self.omitted_parcov * p).x.squeeze())
                 results[("third", prediction.col_names[0])] = result
             self.log("calc third term prediction @" + str(singular_value))
             return results

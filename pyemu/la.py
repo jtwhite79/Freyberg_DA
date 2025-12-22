@@ -32,7 +32,7 @@ class LinearAnalysis(object):
             the noise covariance matrix is loaded from a file using
             the file extension (".jcb"/".jco" for binary, ".cov"/".mat" for PEST-style ASCII matrix,
             or ".unc" for uncertainty files).  If `None`, the noise covariance matrix is
-            constructed from the obsevation weights in `LinearAnalysis.pst`.  Can also be a `pyemu.Cov` instance
+            constructed from the observation weights in `LinearAnalysis.pst`.  Can also be a `pyemu.Cov` instance
         forecasts (varies, optional): forecast sensitivity vectors.  If `str`, first an observation name is assumed (a row
             in `LinearAnalysis.jco`).  If that is not found, a filename is assumed and predictions are
             loaded from a file using the file extension.  If [`str`], a list of observation names is assumed.
@@ -469,7 +469,7 @@ class LinearAnalysis(object):
                 else:
                     raise Exception(
                         "linear_analysis.__load_predictions(): "
-                        + "ndarray passed for predicitons "
+                        + "ndarray passed for predictions "
                         + "requires jco or parcov to get "
                         + "parameter names"
                     )
@@ -516,11 +516,11 @@ class LinearAnalysis(object):
         try:
             nz_names = set(self.pst.nnz_obs_names)
             fnames = [fname for fname in self.forecast_names if fname in nz_names]
-            if len(row_names) > 0:
-                srow_names = set(row_names)
-                fnames = [fname for fname in self.forecast_names if fname in srow_names]
-            else:
-                fnames = []
+            # if len(row_names) > 0:
+            #    srow_names = set(row_names)
+            #    fnames = [fname for fname in self.forecast_names if fname in srow_names]
+            # else:
+            #    fnames = []
         except:
             fnames = []
         if len(fnames) > 0:

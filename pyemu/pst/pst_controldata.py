@@ -47,6 +47,14 @@ ICOV ICOR IEIG [IRES] [JCOSAVE] [VERBOSEREC] [JCOSAVEITN] [REISAVEITN] [PARSAVEI
     "\n"
 )
 
+CONTROL_VARIABLES_UNUSED = """RSTFLE NPAR NOBS NPARGP NPRIOR NOBSGP [MAXCOMPDIM] 
+NTPLFLE NINSFLE PRECIS DPOINT [NUMCOM] [JACFILE] [MESSFILE] [OBSREREF]
+RLAMBDA1 RLAMFAC PHIRATSUF PHIREDLAM NUMLAM [JACUPDATE] [LAMFORGIVE] FACORIG [IBOUNDSTICK] [UPVECBEND]
+PHIREDSWH NRELPAR [NOPTSWITCH] [SPLITSWH] [DOAUI] [DOSENREUSE] [BOUNDSCALE] [PHISTOPTHRESH] [LASTRUN] [PHIABANDON]
+ICOV ICOR IEIG [IRES] [JCOSAVE] [VERBOSEREC] [JCOSAVEITN] [REISAVEITN] [PARSAVEITN] [PARSAVERUN]""".lower().split(
+    "\n"
+)
+
 REG_VARIABLE_LINES = """PHIMLIM PHIMACCEPT [FRACPHIM] [MEMSAVE]
 WFINIT WFMIN WFMAX [LINREG] [REGCONTINUE]
 WFFAC WFTOL IREGADJ [NOPTREGADJ REGWEIGHTRAT [REGSINGTHRESH]]""".lower().split(
@@ -308,7 +316,8 @@ class ControlData(object):
                 t = np.float64
                 f = FFMT
             except Exception as ee:
-                v = value.lower()
+                #string with list to lower and space stripped
+                v = value.lower().replace(" ", "")
                 t = str
                 f = SFMT
         return v, t, f
@@ -326,11 +335,11 @@ class ControlData(object):
 
             extra = {}
             for line in lines:
-                raw = line.strip().split()
+                # split in two: keys and values
+                raw = line.strip().split(None, 1)
                 if len(raw) == 0 or raw[0] == "#":
                     continue
                 name = raw[0].strip().lower()
-
                 value = raw[1].strip()
                 v, t, f = self._parse_value(value)
                 if name not in self._df.index:
@@ -425,7 +434,7 @@ class ControlData(object):
 
                 else:
                     self._df.loc[name, "value"] = v
-                    # self._df.loc[name, "passed"] = True
+                    self._df.loc[name, "passed"] = True
 
         return {}
 
@@ -459,14 +468,30 @@ class ControlData(object):
 
         """
         kw = super(ControlData, self).__getattribute__("keyword_accessed")
+        kw = [kkw for kkw in kw if kkw != "numcom"]
+        default_df = self.get_dataframe()
+        default_df.index = default_df.name.values
+        default_values = default_df.value.to_dict()
+        dimen_vars = CONTROL_VARIABLE_LINES[1].split()
+        dimen_vars.extend(CONTROL_VARIABLE_LINES[2].split())
+        dimen_vars = set(dimen_vars)
+        unused = CONTROL_VARIABLES_UNUSED[0].split()
+        [unused.extend(line.split()) for line in CONTROL_VARIABLES_UNUSED[1:]]
+        unused = [i.lower().replace("[","").replace("]","") for i in unused]
         f.write("* control data keyword\n")
         for n, v in zip(self._df.name, self.formatted_values):
-            if n not in kw:
+            if n.replace("[","").replace("]","") not in kw:
                 if n not in self._df.index:
                     continue
-                elif not self._df.loc[n, "passed"]:
+                if not self._df.loc[n, "passed"]:
                     continue
-            f.write("{0:30} {1}\n".format(n, v))
+                if self._df.loc[n,"value"] == default_values.get(n,self._df.loc[n,"value"]):
+                    continue
+            if n.replace("[","").replace("]","") in dimen_vars:
+                continue
+            if n.replace("[", "").replace("]", "") in unused:
+                continue
+            f.write("{0:30} {1}\n".format(n.replace("[","").replace("]",""), v))
 
     def write(self, f):
         """write control data section to a file
@@ -487,5 +512,6 @@ class ControlData(object):
                 == True
                 or self._df.loc[name.replace("[", "").replace("]", ""), "required"]
                 == True
+                or name.replace("[", "").replace("]", "") in self.keyword_accessed
             ]
             f.write("\n")

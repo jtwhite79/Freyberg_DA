@@ -3,6 +3,7 @@ import copy
 import warnings
 import numpy as np
 import pandas as pd
+from pathlib import Path
 
 import pyemu
 from .pyemu_warnings import PyemuWarning
@@ -85,6 +86,8 @@ class Ensemble(object):
 
     def __init__(self, pst, df, istransformed=False):
         self._df = df
+        if df is not None:
+            self._df = self._df.replace([np.inf, -np.inf], np.nan)
         """`pandas.DataFrame`: the underlying dataframe that stores the realized values"""
         self.pst = pst
         """`pyemu.Pst`: control file instance"""
@@ -222,11 +225,11 @@ class Ensemble(object):
                     pst=self.pst, df=lhs, istransformed=self.istransformed
                 )
             elif "DataFrame" in str(lhs):
-                warnings.warn(
-                    "return type uncaught, losing Ensemble type, returning DataFrame",
-                    PyemuWarning,
-                )
-                print("return type uncaught, losing Ensemble type, returning DataFrame")
+                #warnings.warn(
+                #    "return type uncaught, losing Ensemble type, returning DataFrame",
+                #    PyemuWarning,
+                #)
+                #rint("return type uncaught, losing Ensemble type, returning DataFrame")
                 return lhs
             else:
                 return lhs
@@ -322,6 +325,8 @@ class Ensemble(object):
 
         if "index_col" not in kwargs:
             kwargs["index_col"] = 0
+        if "low_memory" not in kwargs:
+            kwargs["low_memory"] = False
         df = pd.read_csv(filename, *args, **kwargs)
         return cls(pst=pst, df=df)
 
@@ -360,7 +365,10 @@ class Ensemble(object):
         """write `Ensemble` to a PEST-style binary file
 
         Args:
-            filename (`str`): file to write
+            filename (`str` or `Path`): file to write
+
+        Returns:
+            `str`: the filename written (may be modified from input)
 
         Example::
 
@@ -373,22 +381,41 @@ class Ensemble(object):
             values are in arithmetic space
 
         """
-
+        if isinstance(filename, Path):
+            returnpath = True
+        else:
+            filename = Path(filename)
+            returnpath = False
         retrans = False
         if self.istransformed:
             self.back_transform()
             retrans = True
         if self._df.isnull().values.any():
-            warnings.warn("NaN in ensemble", PyemuWarning)
-        pyemu.Matrix.from_dataframe(self._df).to_coo(filename)
+            warnings.warn( "Ensemble.to_binary() warning: NaN in ensemble", PyemuWarning)
+        # if the nobs or npar is large, save as dense binary
+        if self._df.shape[1] > 1e6 or filename.suffix == ".bin":
+            # if the filename doesn't have a .bin suffix, warn and add it
+            if filename.suffix != ".bin":
+                warnings.warn(
+                    "Ensemble.to_binary() warning: large ensemble dimension, will save as "
+                    + "dense binary format... adding '.bin' suffix", PyemuWarning
+                )
+                filename = filename.with_suffix(".bin")
+            self.to_dense(filename)
+        else:
+            pyemu.Matrix.from_dataframe(self._df).to_coo(filename)
         if retrans:
             self.transform()
+        if returnpath:
+            return filename
+        else:
+            return filename.as_posix()
 
     def to_dense(self, filename):
         """write `Ensemble` to a dense-format binary file
 
         Args:
-            filename (`str`): file to write
+            filename (`str` or `Path`): file to write
 
         Example::
 
@@ -398,7 +425,7 @@ class Ensemble(object):
 
         Note:
             back transforms `ParameterEnsemble` before writing so that
-            values are in arithmatic space
+            values are in arithmetic space
 
         """
 
@@ -428,11 +455,11 @@ class Ensemble(object):
 
     @staticmethod
     def _gaussian_draw(
-        cov, mean_values, num_reals, grouper=None, fill=True, factor="eigen"
+        cov, mean_values, num_reals, grouper=None, fill=True, factor="cholesky"
     ):
 
         factor = factor.lower()
-        if factor not in ["eigen", "svd"]:
+        if factor not in ["eigen", "svd", "cholesky"]:
             raise Exception(
                 "Ensemble._gaussian_draw() error: unrecognized"
                 + "'factor': {0}".format(factor)
@@ -452,7 +479,7 @@ class Ensemble(object):
             }
             snv = np.random.randn(num_reals, mean_values.shape[0])
             reals = np.zeros_like(snv)
-            reals[:, :] = np.NaN
+            reals[:, :] = np.nan
             for i, name in enumerate(mean_values.index):
                 if name in cov_names:
                     reals[:, i] = (snv[:, i] * stds[name]) + mean_values.loc[name]
@@ -460,11 +487,11 @@ class Ensemble(object):
                     reals[:, i] = mean_values.loc[name]
         else:
             reals = np.zeros((num_reals, mean_values.shape[0]))
-            reals[:, :] = np.NaN
+            reals[:, :] = np.nan
             if fill:
                 for i, v in enumerate(mean_values.values):
                     reals[:, i] = v
-            cov_map = {n: i for n, i in zip(cov.row_names, np.arange(cov.shape[0]))}
+            #cov_map = {n: i for n, i in zip(cov.row_names, np.arange(cov.shape[0]))}
             mv_map = {
                 n: i for n, i in zip(mean_values.index, np.arange(mean_values.shape[0]))
             }
@@ -473,7 +500,7 @@ class Ensemble(object):
                 for grp_name, names in grouper.items():
                     print("drawing from group", grp_name)
                     # reorder names to be in cov matrix order
-                    #cnames = names
+                    # cnames = names
                     cnames = []
                     snames = set(names)
                     for n in cov.names:
@@ -505,6 +532,8 @@ class Ensemble(object):
                         elif factor == "svd":
                             a, i = Ensemble._get_svd_projection_matrix(cov_grp.as_2d)
                             snv[:, i:] = 0.0
+                        elif factor == "cholesky":
+                            a,i = Ensemble._get_cholesky_projection_matrix(cov_grp.as_2d)
                         # process each realization
                         group_mean_values = mean_values.loc[cnames]
                         for i in range(num_reals):
@@ -514,6 +543,8 @@ class Ensemble(object):
                 snv = np.random.randn(num_reals, cov.shape[0])
                 if factor == "eigen":
                     a, i = Ensemble._get_eigen_projection_matrix(cov.as_2d)
+                elif factor == "cholesky":
+                    a,i = Ensemble._get_cholesky_projection_matrix(cov.as_2d)
                 elif factor == "svd":
                     a, i = Ensemble._get_svd_projection_matrix(cov.as_2d)
                     snv[:, i:] = 0.0
@@ -521,36 +552,42 @@ class Ensemble(object):
                 idxs = [mv_map[name] for name in cov.row_names]
                 for i in range(num_reals):
                     reals[i, idxs] = cov_mean_values + np.dot(a, snv[i, :])
+                    #print(np.dot(a, snv[i, :]).max())
         df = pd.DataFrame(reals, columns=mean_values.index.values)
         df.dropna(inplace=True, axis=1)
         return df
 
     @staticmethod
+    def _get_cholesky_projection_matrix(x):
+        if x.shape[0] != x.shape[1]:
+            raise Exception("matrix not square")
+        return np.linalg.cholesky(x),x.shape[0]
+
+    @staticmethod
     def _get_svd_projection_matrix(x, maxsing=None, eigthresh=1.0e-7):
         if x.shape[0] != x.shape[1]:
             raise Exception("matrix not square")
-        u, s, v = np.linalg.svd(x, full_matrices=True)
-        v = v.transpose()
-
+        u, s, vt = np.linalg.svd(x, full_matrices=True)
         if maxsing is None:
             maxsing = pyemu.Matrix.get_maxsing_from_s(s, eigthresh=eigthresh)
+        if maxsing < x.shape[0]:  
+            print("truncating projection matrix at {0} of {1} dimensions".\
+                format(maxsing,x.shape[0]))
         u = u[:, :maxsing]
         s = s[:maxsing]
-        v = v[:, :maxsing]
-
+        
         # fill in full size svd component matrices
         s_full = np.zeros(x.shape)
-        s_full[: s.shape[0], : s.shape[1]] = np.sqrt(
-            s
-        )  # sqrt since sing vals are eigvals**2
-        v_full = np.zeros_like(s_full)
-        v_full[: v.shape[0], : v.shape[1]] = v
-        # form the projection matrix
-        proj = np.dot(v_full, s_full)
+        # sqrt bc we need the sqrt matrix of s
+        s_full[: s.shape[0], : s.shape[0]] = np.sqrt(s)  
+        proj = np.dot(u, s_full)
         return proj, maxsing
 
     @staticmethod
     def _get_eigen_projection_matrix(x):
+        print("WARNING: np.linalg.eigh() produces different"+\
+        " results on different platforms when matrixes are near"+\
+        " singular...")
         # eigen factorization
         v, w = np.linalg.eigh(x)
 
@@ -710,7 +747,7 @@ class ObservationEnsemble(Ensemble):
 
     @classmethod
     def from_gaussian_draw(
-        cls, pst, cov=None, num_reals=100, by_groups=True, fill=False, factor="eigen"
+        cls, pst, cov=None, num_reals=100, by_groups=True, fill=False, factor="cholesky"
     ):
         """generate an `ObservationEnsemble` from a (multivariate) gaussian
         distribution
@@ -728,10 +765,10 @@ class ObservationEnsemble(Ensemble):
                 assumes no correlation (covariates) between observation groups.
             fill (`bool`): flag to fill in zero-weighted observations with control file
                 values.  Default is False.
-            factor (`str`): how to factorize `cov` to form the projectin matrix.  Can
-                be "eigen" or "svd". The "eigen" option is default and is faster.  But
+            factor (`str`): how to factorize `cov` to form the projection matrix.  Can
+                be "eigen", "svd", or "cholesky. The "cholesky" option is default and is faster.  But
                 for (nearly) singular cov matrices (such as those generated empirically
-                from ensembles), "svd" is the only way.  Ignored for diagonal `cov`.
+                from ensembles), "svd" and/or "eigen" might be required.  Ignored for diagonal `cov`.
 
         Returns:
             `ObservationEnsemble`: the realized `ObservationEnsemble` instance
@@ -767,9 +804,12 @@ class ObservationEnsemble(Ensemble):
             cov = pyemu.Cov.from_observation_data(pst)
         obs = pst.observation_data
         mean_values = obs.obsval.copy()
+        if len(pst.nnz_obs_names) == 0:
+            warnings.warn("ObservationEnsemble.from_gaussian_draw(): all zero weights",PyemuWarning)
         # only draw for non-zero weights, get a new cov
         if not fill:
-            nz_cov = cov.get(pst.nnz_obs_names)
+            names = set(pst.nnz_obs_names).intersection(set(cov.row_names))
+            nz_cov = cov.get(list(names))
         else:
             nz_cov = cov.copy()
 
@@ -805,17 +845,63 @@ class ObservationEnsemble(Ensemble):
             this method to evaluate new weighting strategies
 
         """
+        return self.get_phi_vector()
+
+    def get_phi_vector(self, noise_obs_filename=None, noise_obs_flag=False):
+        from pyemu.pst.pst_handler import get_constraint_tags
+        pstpath = os.path.join(*os.path.split(self.pst.filename)[:-1])
+        if noise_obs_filename is not None:
+            noise_obs_flag = True
+        if noise_obs_flag is True:
+            # if no noise_obs_filename included, try to grab from pst object
+            if noise_obs_filename is None:
+                for tag in ['ies_observation_ensemble', 'ies_obs_en']:
+                    noise_obs_filename = self.pst.pestpp_options.get(tag)
+                    if noise_obs_filename is not None:
+                        break
+                if noise_obs_filename is None:
+                    raise Exception(
+                        "no noise_observation_filename passed or found in pst options"
+                    )
+            # if it looks like a binary file, try loading from binary
+            if (noise_obs_filename.endswith('jcb')) or (noise_obs_filename.endswith('jco')):
+                try:
+                    noise_obs = pyemu.Matrix.from_binary(
+                        os.path.join(pstpath, noise_obs_filename)
+                    ).to_dataframe()
+                except:
+                    raise Exception(
+                        f"Could not open {noise_obs_filename}"
+                    )
+            # otherwise assume it's a csv
+            else:
+                kwargs = {}
+                kwargs["index_col"] = 0
+                kwargs["low_memory"] = False
+                try:
+                    noise_obs = pd.read_csv(noise_obs_filename, **kwargs)
+                except:
+                    raise Exception(
+                        f"Could not open {noise_obs_filename}"
+                    )
+            # make sure the index is all string (since the real)
+            noise_obs.index = [str(i) for i in noise_obs.index]
+
         cols = self._df.columns
         pst = self.pst
-        weights = self.pst.observation_data.loc[cols, "weight"]
-        obsval = self.pst.observation_data.loc[cols, "obsval"]
-        phi_vec = []
-        for idx in self._df.index.values:
-            simval = self._df.loc[idx, cols]
-            phi = (((simval - obsval) * weights) ** 2).sum()
-            phi_vec.append(phi)
-        return pd.Series(data=phi_vec, index=self.index)
+        obs = pst.observation_data.loc[cols, ['obsval', 'weight', "obgnme"]]
+        if noise_obs_flag is True:
+            enres = self._df.sub(noise_obs).dropna().T
+        else:
+            enres = self._df.sub(obs.obsval).T
+        ltobs = obs.obgnme.str.lower().str.startswith(get_constraint_tags('lt'))
+        gtobs = obs.obgnme.str.lower().str.startswith(get_constraint_tags('gt'))
+        enres.loc[ltobs] = enres.loc[ltobs].clip(0, None)
+        enres.loc[gtobs] = enres.loc[gtobs].clip(None, 0)
+        enswr = enres.mul(obs.weight, axis=0) ** 2
 
+        return enswr.sum()
+               
     def add_base(self):
         """add the control file `obsval` values as a realization
 
@@ -873,7 +959,7 @@ class ParameterEnsemble(Ensemble):
 
     @classmethod
     def from_gaussian_draw(
-        cls, pst, cov=None, num_reals=100, by_groups=True, fill=True, factor="eigen"
+        cls, pst, cov=None, num_reals=100, by_groups=True, fill=True, factor="cholesky"
     ):
         """generate a `ParameterEnsemble` from a (multivariate) (log) gaussian
         distribution
@@ -894,9 +980,9 @@ class ParameterEnsemble(Ensemble):
             fill (`bool`): flag to fill in fixed and/or tied parameters with control file
                 values.  Default is True.
             factor (`str`): how to factorize `cov` to form the projection matrix.  Can
-                be "eigen" or "svd". The "eigen" option is default and is faster.  But
+                be "eigen", "svd", or "cholesky". The "cholesky" option is default and is faster.  But
                 for (nearly) singular cov matrices (such as those generated empirically
-                from ensembles), "svd" is the only way.  Ignored for diagonal `cov`.
+                from ensembles), "svd" and/or "eigen" might be required.  Ignored for diagonal `cov`.
 
         Returns:
             `ParameterEnsemble`: the parameter ensemble realized from the gaussian
@@ -932,6 +1018,8 @@ class ParameterEnsemble(Ensemble):
         li = par.partrans == "log"
         mean_values = par.parval1.copy()
         mean_values.loc[li] = mean_values.loc[li].apply(np.log10)
+        if len(pst.adj_par_names) == 0:
+            warnings.warn("ParameterEnsemble.from_gaussian_draw(): no adj pars", PyemuWarning)
         grouper = None
         if not cov.isdiagonal and by_groups:
             adj_par = par.loc[pst.adj_par_names, :]
@@ -944,6 +1032,7 @@ class ParameterEnsemble(Ensemble):
             num_reals=num_reals,
             grouper=grouper,
             fill=fill,
+            factor=factor
         )
         df.loc[:, li] = 10.0 ** df.loc[:, li]
         return cls(pst, df, istransformed=False)
@@ -997,7 +1086,7 @@ class ParameterEnsemble(Ensemble):
         #              for i in range(num_reals)]
         real_names = np.arange(num_reals, dtype=np.int64)
         arr = np.empty((num_reals, len(ub)))
-        arr[:, :] = np.NaN
+        arr[:, :] = np.nan
         adj_par_names = set(pst.adj_par_names)
         for i, pname in enumerate(pst.parameter_data.parnme):
             # print(pname, lb[pname], ub[pname])
@@ -1057,8 +1146,10 @@ class ParameterEnsemble(Ensemble):
 
         real_names = np.arange(num_reals, dtype=np.int64)
         arr = np.empty((num_reals, len(ub)))
-        arr[:, :] = np.NaN
+        arr[:, :] = np.nan
         adj_par_names = set(pst.adj_par_names)
+        if len(adj_par_names) == 0:
+            warnings.warn("ParameterEnsemble.from_uniform_draw(): no adj pars",PyemuWarning)
         for i, pname in enumerate(pst.parameter_data.parnme):
             # print(pname,lb[pname],ub[pname])
             if pname in adj_par_names:
@@ -1167,7 +1258,7 @@ class ParameterEnsemble(Ensemble):
         # gaussian
         pes = []
         if len(how_groups["gaussian"]) > 0:
-            gset = set(how_groups["gaussian"])
+            gset = how_groups["gaussian"]
             par_gaussian = par_org.loc[gset, :]
             # par_gaussian.sort_values(by="parnme", inplace=True)
             par_gaussian.sort_index(inplace=True)
@@ -1176,7 +1267,7 @@ class ParameterEnsemble(Ensemble):
             if cov is not None:
                 cset = set(cov.row_names)
                 # gset = set(how_groups["gaussian"])
-                diff = gset.difference(cset)
+                diff = set(gset).difference(cset)
                 assert len(diff) == 0, (
                     "ParameterEnsemble.from_mixed_draws() error: the 'cov' is not compatible with "
                     + " the parameters listed as 'gaussian' in how_dict, the following are not in the cov:{0}".format(
@@ -1209,7 +1300,7 @@ class ParameterEnsemble(Ensemble):
 
         df = pd.DataFrame(index=np.arange(num_reals), columns=par_org.parnme.values)
 
-        df.loc[:, :] = np.NaN
+        df.loc[:, :] = np.nan
         if fill:
             fixed_tied = par_org.loc[
                 par_org.partrans.apply(lambda x: x in ["fixed", "tied"]), "parval1"
@@ -1218,7 +1309,7 @@ class ParameterEnsemble(Ensemble):
                 df.loc[:, p] = v
 
         for pe in pes:
-            df.loc[pe.index, pe.columns] = pe
+            df.loc[pe.index, pe.columns] = pe._df
 
         # this dropna covers both "fill" and "partial"
         df = df.dropna(axis=1)
@@ -1264,7 +1355,7 @@ class ParameterEnsemble(Ensemble):
             # check for scale differences - I don't who is dumb enough
             # to change scale between par files and pst...
             diff = df.scale - pst.parameter_data.scale
-            if diff.apply(np.abs).sum() > 0.0:
+            if diff.abs().sum() > 0.0:
                 warnings.warn(
                     "differences in scale detected, applying scale in par file",
                     PyemuWarning,
@@ -1289,7 +1380,7 @@ class ParameterEnsemble(Ensemble):
                     ),
                     PyemuWarning,
                 )
-                blank_df = pd.DataFrame(index=df_all.index, columns=diff)
+                blank_df = pd.DataFrame(index=df_all.index, columns=list(diff))
 
                 df_all = pd.concat([df_all, blank_df], axis=1)
 
@@ -1304,6 +1395,80 @@ class ParameterEnsemble(Ensemble):
                 df_all = df_all.loc[:, pst.par_names]
 
         return ParameterEnsemble(pst=pst, df=df_all)
+
+    def draw_new_ensemble(self,num_reals,include_noise=True,noise_reals=None):
+        """Draw a new (potentially larger) ParameterEnsemble instance using the realizations 
+        in `self`.  
+
+        Args:
+            num_reals (int) : number of realizations to generate
+            include_noise (varies): a bool or a float the describes the standard deviation of
+                noise to add to the new realizations.  This is to help with the issue of 
+                under-varied new realizations resulting from npar >> nreals in `self`. If True,
+                The standard devation is set to one over the square root on number of reals in 
+                `self`.  
+            noise_reals (ParameterEnsemble): other existing realizations (likely prior realizations)
+                that are used as noise realizations in place of IID noise that is used if `include_noise` 
+                is True and `noise_reals` is None.
+        
+        Returns
+            ParameterEnsemble
+
+        Note:
+            any fixed and/or tied parameters in self are omitted in the returned ParameterEnsemble
+
+        """
+
+        back_trans = False
+        if not self.istransformed:
+            self.transform()
+            back_trans = True
+        adj_names = self.pst.adj_par_names
+        
+        proj = (self.get_deviations() * (1./(np.sqrt(self.shape[0])-1))).transpose()
+        proj = proj.loc[adj_names,:]
+        
+        mu_vec = self._df.loc[:,adj_names].mean()
+        
+        snv_draws = np.random.standard_normal((num_reals,self.shape[0]))
+        
+        noise = 0.0
+        if include_noise is not False:
+                if include_noise is True:
+                    noise = 1./np.sqrt(self.shape[0])
+                else:
+                    noise = float(include_noise)
+        
+        if noise_reals is not None:
+            missing = set(self.columns.to_list()) - set(noise_reals.columns)
+            if len(missing) > 0:
+                raise Exception("the following par names are not in `noise_reals`: "+",".join(missing))
+            noise_real_choices = np.random.choice(noise_reals.index,num_reals)
+            noise_back_trans = False
+            if not noise_reals.istransformed:
+                noise_reals.transform()
+                noise_back_trans = True
+            noise_deviations = noise_reals.get_deviations()
+        
+        reals = []
+        for i,snv_draw in enumerate(snv_draws):
+            real = mu_vec + np.dot(proj.values,snv_draw)       
+            reals.append(real)
+            if noise != 0.0:
+                if noise_reals is None:
+                    noise_real = np.random.normal(0.0,noise,real.shape[0])
+                else:
+                    noise_real = noise * noise_deviations.loc[noise_real_choices[i],adj_names].values
+                reals[-1] += noise_real
+            
+        reals = pd.DataFrame(reals,columns=adj_names,index=np.arange(num_reals))
+        reals = ParameterEnsemble(df=reals,pst=self.pst,istransformed=True)
+        reals.back_transform()
+        if back_trans:
+            self.back_transform()
+        if noise_reals is not None and noise_back_trans:
+            noise_reals.back_transform()
+        return reals
 
     def back_transform(self):
         """back transform parameters with respect to `partrans` value.
@@ -1477,7 +1642,7 @@ class ParameterEnsemble(Ensemble):
                     base = pyemu.pst_utils.read_parfile(center_on)
                 except:
                     raise Exception(
-                        "'center_on' arg not found in index and couldnt be loaded as a '.par' file"
+                        "'center_on' arg not found in index and couldn't be loaded as a '.par' file"
                     )
             else:
                 raise Exception(
@@ -1537,7 +1702,7 @@ class ParameterEnsemble(Ensemble):
         else:
             raise Exception(
                 "unrecognized enforce_bounds arg:"
-                + "{0}, should be 'reset' or 'drop'".format(enforce_bounds)
+                + "{0}, should be 'reset' or 'drop'".format(how)
             )
 
     def _enforce_scale(self, bound_tol):
@@ -1596,6 +1761,7 @@ class ParameterEnsemble(Ensemble):
 
             if lbnd_facs.shape[0] > 0:
                 lmin = lbnd_facs.min()
+                # print(lbnd_facs)
                 lmin_idx = lbnd_facs.idxmin()
                 print(
                     "enforce_scale lbnd controlling parameter, scale factor, "
@@ -1631,7 +1797,7 @@ class ParameterEnsemble(Ensemble):
                 lb - self._df.loc[ridx, :]
             ).max() > 0.0:
                 drop.append(ridx)
-        self.loc[drop, :] = np.NaN
+        self.loc[drop, :] = np.nan
         self.dropna(inplace=True)
 
     def _enforce_reset(self, bound_tol):
@@ -1639,10 +1805,6 @@ class ParameterEnsemble(Ensemble):
         violating vals to bound
         """
 
-        ub = (self.ubnd * (1.0 - bound_tol)).to_dict()
-        lb = (self.lbnd * (1.0 + bound_tol)).to_dict()
-
-        val_arr = self._df.values
-        for iname, name in enumerate(self.columns):
-            val_arr[val_arr[:, iname] > ub[name], iname] = ub[name]
-            val_arr[val_arr[:, iname] < lb[name], iname] = lb[name]
+        ub = self.ubnd * (1.0 - bound_tol)
+        lb = self.lbnd * (1.0 + bound_tol)
+        self._df = self._df.clip(lb, ub, axis=1)

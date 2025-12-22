@@ -3,6 +3,7 @@
 from __future__ import print_function
 import os
 import copy
+import shutil
 from datetime import datetime
 import multiprocessing as mp
 import warnings
@@ -331,11 +332,13 @@ class SpecSim2d(object):
 
     Example::
 
-        v = pyemu.utils.geostats.ExpVario(a=1000,contribution=1.0)
+        v = pyemu.utils.geostats.ExpVario(a=100,contribution=1.0)
         gs = pyemu.utils.geostats.GeoStruct(variograms=v,nugget=0.5)
-        delx,dely = np.arange(100), np.arrange(100)
+        delx,dely = np.ones(150), np.ones(50)
         ss = pyemu.utils.geostats.SpecSim2d(delx,dely,gs)
-        arrays = ss.draw(num_reals=100)
+        arr = np.squeeze(ss.draw_arrays(num_reals=1))*.05 + .08
+        plt.imshow(arr)
+        plt.colorbar(shrink=.40)
 
     """
 
@@ -344,8 +347,8 @@ class SpecSim2d(object):
         self.geostruct = geostruct
         self.delx = delx
         self.dely = dely
-        self.num_pts = np.NaN
-        self.sqrt_fftc = np.NaN
+        self.num_pts = np.nan
+        self.sqrt_fftc = np.nan
         self.effective_variograms = None
         self.initialize()
 
@@ -522,8 +525,7 @@ class SpecSim2d(object):
             raise Exception(
                 "SpecSim2D grid_par_ensemble_helper() error: only a single variogram can be used..."
             )
-        gr_df.loc[:, "i"] = gr_df.i.apply(np.int64)
-        gr_df.loc[:, "j"] = gr_df.j.apply(np.int64)
+        gr_df.loc[:, ["i", "j"]] = gr_df[["i", "j"]].astype(int)
 
         # scale the total contrib
         org_var = self.geostruct.variograms[0].contribution
@@ -552,7 +554,7 @@ class SpecSim2d(object):
 
             gp_par = par.loc[gp_df.parnme, :]
             # use the parval1 as the mean
-            mean_arr = np.zeros((self.dely.shape[0], self.delx.shape[0])) + np.NaN
+            mean_arr = np.zeros((self.dely.shape[0], self.delx.shape[0])) + np.nan
             mean_arr[gp_df.i, gp_df.j] = gp_par.parval1
             # fill missing mean values
             mean_arr[np.isnan(mean_arr)] = gp_par.parval1.mean()
@@ -561,9 +563,12 @@ class SpecSim2d(object):
             mx_ubnd = gp_par.parubnd_trans.max()
             mn_lbnd = gp_par.parlbnd_trans.min()
             var = ((mx_ubnd - mn_lbnd) / sigma_range) ** 2
-
+            print("...speccim group:",gr_grp," mx upper:", mx_ubnd, "min lower:",mn_lbnd)
+            
+            print("...speccim group:",gr_grp," variance:", var, "new var:",new_var)
             # update the geostruct
             self.geostruct.variograms[0].contribution = var * new_var
+            print("...speccim group:",gr_grp," contrib:", self.geostruct.variograms[0].contribution)
             self.geostruct.nugget = var * new_nug
             # print(gr_grp, var,new_var,mx_ubnd,mn_lbnd)
             # reinitialize and draw
@@ -787,10 +792,10 @@ class OrdinaryKrige(object):
             warnings.warn(
                 "duplicates detected in point_data..attempting to rectify", PyemuWarning
             )
-            ux_std = point_data.groupby(point_data.name).std()["x"]
+            ux_std = point_data.groupby(point_data.name).x.std()
             if ux_std.max() > 0.0:
                 raise Exception("duplicate point_info entries with different x values")
-            uy_std = point_data.groupby(point_data.name).std()["y"]
+            uy_std = point_data.groupby(point_data.name).y.std()
             if uy_std.max() > 0.0:
                 raise Exception("duplicate point_info entries with different y values")
 
@@ -871,21 +876,26 @@ class OrdinaryKrige(object):
         var_filename=None,
         forgive=False,
         num_threads=1,
+        try_use_ppu=False,
+        ppu_factor_filename = "factors.dat"
     ):
         """calculate kriging factors (weights) for a structured grid.
 
         Args:
-            spatial_reference (`flopy.utils.reference.SpatialReference`): a spatial
+            spatial_reference (`pyemu.helpers.SpatialReference` or
+            `flopy.ModelGrid`): a spatial
                 reference that describes the orientation and
-                spatail projection of the the structured grid
+                spatial projection of the model grid. Needs attributes:
+                [`xcentergrid`, `ycentergrid`, `nrow`, `ncol`,
+                 `grid_type`,  and `ncpl` (only if grid type=='vertex')].
             zone_array (`numpy.ndarray`): an integer array of zones to use for kriging.
                 If not None, then `point_data` must also contain a "zone" column.  `point_data`
                 entries with a zone value not found in zone_array will be skipped.
                 If None, then all `point_data` will (potentially) be used for
                 interpolating each grid node. Default is None
-            minpts_interp (`int`): minimum number of `point_data` entires to use for interpolation at
+            minpts_interp (`int`): minimum number of `point_data` entries to use for interpolation at
                 a given grid node.  grid nodes with less than `minpts_interp`
-                `point_data` found will be skipped (assigned np.NaN).  Defaut is 1
+                `point_data` found will be skipped (assigned np.nan).  Default is 1
             maxpts_interp (`int`) maximum number of `point_data` entries to use for interpolation at
                 a given grid node.  A larger `maxpts_interp` will yield "smoother"
                 interplation, but using a large `maxpts_interp` will slow the
@@ -897,21 +907,28 @@ class OrdinaryKrige(object):
                 Default is False
             var_filename (`str`): a filename to save the kriging variance for each interpolated grid node.
                 Default is None.
-            forgive (`bool`):  flag to continue if inversion of the kriging matrix failes at one or more
+            forgive (`bool`):  flag to continue if inversion of the kriging matrix fails at one or more
                 grid nodes.  Inversion usually fails if the kriging matrix is singular,
                 resulting from `point_data` entries closer than EPSILON distance.  If True,
                 warnings are issued for each failed inversion.  If False, an exception
                 is raised for failed matrix inversion.
             num_threads (`int`): number of multiprocessing workers to use to try to speed up
                 kriging in python.  Default is 1.
-
+            try_use_ppu (`bool`): flag to try to use `PyPestUtils` to solve the kriging equations.  If `true`,
+                and if `from pypestutils.pestutilslib import PestUtilsLib` does not raise an exception,
+                the `PestUtilsLib.calc_kriging_factors_2d()` is used.  Otherwise, the `OrdinaryKrige`
+                implementation is used. 
+            ppu_factor_filename (`str`): the name of the factor file that will be created if 
+                `PestUtilsLib.calc_kriging_factors_2d()` is used.  Default is "factors.dat".  Unused if
+                `try_use_ppu` is `False`.  
         Returns:
             `pandas.DataFrame`: a dataframe with information summarizing the ordinary kriging
-            process for each grid node
+            process for each grid node.  Not returned if `try_use_ppu` is `True`.
 
         Note:
             this method calls OrdinaryKrige.calc_factors()
             this method is the main entry point for grid-based kriging factor generation
+            
 
 
         Example::
@@ -939,11 +956,83 @@ class OrdinaryKrige(object):
                 "spatial_reference does not have proper attributes:{0}".format(str(e))
             )
 
+
+
+        use_ppu = False
+        if try_use_ppu:
+            try:
+                from pypestutils.pestutilslib import PestUtilsLib
+                use_ppu = True
+            except Exception as e:
+                pass
+
+
+        if use_ppu:
+            if x.ndim == 1:
+                x = np.atleast_2d(x).transpose()
+                y = np.atleast_2d(y).transpose()
+            print("...pypestutils detected and being used for kriging solve, trust us, you want this!")
+            ecs = self.point_data.x.values
+            ncs = self.point_data.y.values
+            zns = 1#np.ones_like(ecs,dtype=int)
+            if "zone" in self.point_data.columns:
+                zns = self.point_data.zone.values.astype(int)
+            ect = x.ravel()
+            nct = y.ravel()
+            znt = 1
+            if zone_array is not None:
+                znt = zone_array.ravel().astype(int)
+            
+            #reset any missing values in znt to a zns value - 
+            # doesn't matter in the end, just results in more nodes 
+            # being solved for...
+            znt_unique = np.unique(znt)
+            zns_unique = np.unique(zns)
+            for uz in znt_unique:
+                if uz not in zns_unique:
+                    znt[znt==uz] = zns_unique[0]
+            
+            assert len(self.geostruct.variograms) == 1
+            v = self.geostruct.variograms[0]
+            if isinstance(v,ExpVario):
+                vartype = 2
+            elif isinstance(v,SphVario):
+                vartype = 1
+            elif isinstance(v, GauVario):
+                vartype = 3
+            else:
+                raise NotImplementedError("unsupported variogram type: {0}".format(str(type(v))))
+            krigtype = 1 #hard coded to ordinary
+            factorfiletype = 1 #hard coded to ascii for now since we have to rewrite the fac file
+
+            plib = PestUtilsLib()
+            num_interp_pts = plib.calc_kriging_factors_2d(self.point_data.x.values,
+                                                          self.point_data.y.values,zns,
+                                                          x.ravel(),y.ravel(),znt,
+                                                          vartype,krigtype,
+                                                          v.a,v.anisotropy,v.bearing,
+                                                          search_radius,maxpts_interp,
+                                                          minpts_interp,ppu_factor_filename,
+                                                          factorfiletype)
+            plib.free_all_memory()
+            assert os.path.exists(ppu_factor_filename)
+            reformat_factorfile(x.shape[0], x.shape[1], self.point_data, self.geostruct, ppu_factor_filename)
+
+            print("...ppu_factor_filename '{0}' created, factors calculated for {1} points".\
+                  format(ppu_factor_filename,num_interp_pts))
+            return num_interp_pts
+
         if var_filename is not None:
-            arr = (
-                np.zeros((self.spatial_reference.nrow, self.spatial_reference.ncol))
+            if self.spatial_reference.grid_type=='vertex':
+                arr = (
+                np.zeros((self.spatial_reference.ncpl, 1))
                 - 1.0e30
-            )
+                )
+            else:
+                arr = (
+                    np.zeros((self.spatial_reference.nrow, self.spatial_reference.ncol))
+                    - 1.0e30
+                )
 
         # the simple case of no zone array: ignore point_data zones
         if zone_array is None:
@@ -960,12 +1049,14 @@ class OrdinaryKrige(object):
             )
 
             if var_filename is not None:
-
                 arr = df.err_var.values.reshape(x.shape)
                 np.savetxt(var_filename, arr, fmt="%15.6E")
 
         if zone_array is not None:
-            assert zone_array.shape == x.shape
+            if self.spatial_reference.grid_type=='vertex':
+                assert zone_array.shape[0] == x.shape[0]
+            else:
+                assert zone_array.shape == x.shape
             if "zone" not in self.point_data.columns:
                 warnings.warn(
                     "'zone' columns not in point_data, assigning generic zone",
@@ -983,13 +1074,24 @@ class OrdinaryKrige(object):
                         PyemuWarning,
                     )
                     continue
-                xzone, yzone = x.copy(), y.copy()
-                xzone[zone_array != pt_data_zone] = np.NaN
-                yzone[zone_array != pt_data_zone] = np.NaN
+                # cutting list of cell positions to just in zone
+                if spatial_reference.grid_type == "vertex":
+                    xzone = x[(zone_array == pt_data_zone).ravel()].copy()
+                    yzone = y[(zone_array == pt_data_zone).ravel()].copy()
+                else:
+                    xzone = x[zone_array == pt_data_zone].copy()
+                    yzone = y[zone_array == pt_data_zone].copy()
+                
+                idx = np.arange(
+                    len(zone_array.ravel())
+                )[(zone_array == pt_data_zone).ravel()]
+                # xzone[zone_array != pt_data_zone] = np.nan
+                # yzone[zone_array != pt_data_zone] = np.nan
 
                 df = self.calc_factors(
-                    xzone.ravel(),
-                    yzone.ravel(),
+                    xzone,
+                    yzone,
+                    idx_vals=idx,  # need to pass if xzone,yzone is not all x,y
                     minpts_interp=minpts_interp,
                     maxpts_interp=maxpts_interp,
                     search_radius=search_radius,
@@ -1001,10 +1103,18 @@ class OrdinaryKrige(object):
 
                 dfs.append(df)
                 if var_filename is not None:
-                    #a = np.array([float(str(i)) for i in df.err_var],dtype=np.float64).reshape(x.shape)
-                    #a = df.err_var.values.reshape(x.shape)
-                    a = df.err_var.values.reshape(x.shape)
-                    na_idx = np.isfinite(a)
+                    # rebuild full df so we can build array, as per
+                    fulldf = pd.DataFrame(data={"x": x.ravel(), "y": y.ravel()})
+                    fulldf[['idist', 'inames', 'ifacts', 'err_var']] = np.array(
+                        [[[], [], [], np.nan]] * len(fulldf),
+                        dtype=object)
+                    fulldf = fulldf.set_index(['x', 'y'])
+                    fulldf.loc[df.set_index(['x', 'y']).index] = df.set_index(['x', 'y'])
+                    fulldf = fulldf.reset_index()
+                    a = fulldf.err_var.values.reshape(x.shape)
+                    na_idx = np.isfinite(a.astype(float))
+                    if len(a.shape)==1:
+                        a = np.reshape(a, (a.shape[0], 1))
                     arr[na_idx] = a[na_idx]
             if self.interp_data is None or self.interp_data.dropna().shape[0] == 0:
                 raise Exception("no interpolation took place...something is wrong")
@@ -1023,17 +1133,23 @@ class OrdinaryKrige(object):
 
     def _remove_neg_factors(self):
         """
-        private function to remove negative kriging factors and 
-        renormalize remaining positive factors following the 
-        method of Deutsch (1996): 
+        private function to remove negative kriging factors and
+        renormalize remaining positive factors following the
+        method of Deutsch (1996):
         https://doi.org/10.1016/0098-3004(96)00005-2
-        
-               
+
+
         """
-        newd, newn,newf = [],[],[],
-        for d,n,f in zip(self.interp_data.idist.values, 
-                        self.interp_data.inames.values, 
-                        self.interp_data.ifacts.values):
+        newd, newn, newf = (
+            [],
+            [],
+            [],
+        )
+        for d, n, f in zip(
+            self.interp_data.idist.values,
+            self.interp_data.inames.values,
+            self.interp_data.ifacts.values,
+        ):
             # if the factor list is empty, no changes are made
             # if the factor list has only one value, it is 1.0 so no changes
             # if more than one factor, remove negatives and renormalize
@@ -1042,10 +1158,10 @@ class OrdinaryKrige(object):
                 d = np.array(d)
                 n = np.array(n)
                 f = np.array(f)
-                d=d[f>0]
-                n=n[f>0]
-                f=f[f>0]  
-                f /= f.sum() # renormalize to sum to unity
+                d = d[f > 0]
+                n = n[f > 0]
+                f = f[f > 0]
+                f /= f.sum()  # renormalize to sum to unity
             newd.append(d)
             newn.append(n)
             newf.append(f)
@@ -1091,7 +1207,7 @@ class OrdinaryKrige(object):
         forgive=False,
         num_threads=1,
         idx_vals=None,
-        remove_negative_factors=True
+        remove_negative_factors=True,
     ):
         """calculate ordinary kriging factors (weights) for the points
         represented by arguments x and y
@@ -1099,10 +1215,10 @@ class OrdinaryKrige(object):
         Args:
             x ([`float`]):  x-coordinates to calculate kriging factors for
             y (([`float`]): y-coordinates to calculate kriging factors for
-            minpts_interp (`int`): minimum number of point_data entires to use for interpolation at
+            minpts_interp (`int`): minimum number of point_data entries to use for interpolation at
                 a given x,y interplation point.  interpolation points with less
                 than `minpts_interp` `point_data` found will be skipped
-                (assigned np.NaN).  Defaut is 1
+                (assigned np.nan).  Default is 1
             maxpts_interp (`int`): maximum number of point_data entries to use for interpolation at
                 a given x,y interpolation point.  A larger `maxpts_interp` will
                 yield "smoother" interplation, but using a large `maxpts_interp`
@@ -1112,7 +1228,7 @@ class OrdinaryKrige(object):
                 interpolation point to search for `point_data` entries. Default is 1.0e+10
             verbose (`bool`): a flag to  echo process to stdout during the interpolatino process.
                 Default is False
-            forgive (`bool`): flag to continue if inversion of the kriging matrix failes at one or more
+            forgive (`bool`): flag to continue if inversion of the kriging matrix fails at one or more
                 interpolation points.  Inversion usually fails if the kriging matrix is singular,
                 resulting from `point_data` entries closer than EPSILON distance.  If True,
                 warnings are issued for each failed inversion.  If False, an exception
@@ -1148,23 +1264,46 @@ class OrdinaryKrige(object):
 
 
         """
+        # can do this up here, as same between org and mp method
+        assert len(x) == len(y)
+        if idx_vals is not None and len(idx_vals) != len(x):
+            raise Exception("len(idx_vals) != len(x)")
+        # find the point data to use for each interp point
+        df = pd.DataFrame(data={"x": x, "y": y})
+        if idx_vals is not None:
+            df.index = np.array(idx_vals).astype(int)
+        # now can just pass df (contains x and y)
+        # trunc to just deal with pp locations in zones
+        pt_data = self.point_data
+        if pt_zone is None:
+            ptx_array = self.point_data.x.values
+            pty_array = self.point_data.y.values
+            ptnames = self.point_data.name.values
+        else:
+            ptx_array = pt_data.loc[pt_data.zone == pt_zone, "x"].values
+            pty_array = pt_data.loc[pt_data.zone == pt_zone, "y"].values
+            ptnames = pt_data.loc[pt_data.zone == pt_zone, "name"].values
+            # pt_data = pt_data.loc[ptnames]
         if num_threads == 1:
             return self._calc_factors_org(
-                x,
-                y,
+                df,
+                ptx_array,
+                pty_array,
+                ptnames,
                 minpts_interp,
                 maxpts_interp,
                 search_radius,
                 verbose,
                 pt_zone,
                 forgive,
-                idx_vals,
-                remove_negative_factors
+                remove_negative_factors,
             )
         else:
             return self._calc_factors_mp(
-                x,
-                y,
+                df,
+                ptx_array,
+                pty_array,
+                ptnames,
                 minpts_interp,
                 maxpts_interp,
                 search_radius,
@@ -1172,45 +1311,35 @@ class OrdinaryKrige(object):
                 pt_zone,
                 forgive,
                 num_threads,
-                idx_vals,
-                remove_negative_factors
+                remove_negative_factors,
             )
 
     def _calc_factors_org(
         self,
-        x,
-        y,
+        df,
+        ptx_array,
+        pty_array,
+        ptnames,
         minpts_interp=1,
         maxpts_interp=20,
         search_radius=1.0e10,
         verbose=False,
         pt_zone=None,
         forgive=False,
-        idx_vals=None,
-        remove_negative_factors=True
+        remove_negative_factors=True,
     ):
-
-        assert len(x) == len(y)
-        if idx_vals is not None and len(idx_vals) != len(x):
-            raise Exception("len(idx_vals) != len(x)")
-        # find the point data to use for each interp point
-        sqradius = search_radius ** 2
-        df = pd.DataFrame(data={"x": x, "y": y})
-        if idx_vals is not None:
-            df.index = [int(i) for i in idx_vals]
+        # assert len(x) == len(y)
+        # if idx_vals is not None and len(idx_vals) != len(x):
+        #     raise Exception("len(idx_vals) != len(x)")
+        #
+        # df = pd.DataFrame(data={"x": x, "y": y})
+        # if idx_vals is not None:
+        #     df.index = [int(i) for i in idx_vals]
         inames, idist, ifacts, err_var = [], [], [], []
         sill = self.geostruct.sill
-        if pt_zone is None:
-            ptx_array = self.point_data.x.values
-            pty_array = self.point_data.y.values
-            ptnames = self.point_data.name.values
-        else:
-            pt_data = self.point_data
-            ptx_array = pt_data.loc[pt_data.zone == pt_zone, "x"].values
-            pty_array = pt_data.loc[pt_data.zone == pt_zone, "y"].values
-            ptnames = pt_data.loc[pt_data.zone == pt_zone, "name"].values
-        # if verbose:
-
+        # ptnames = ptd.name.values
+        # find the point data to use for each interp point
+        sqradius = search_radius ** 2
         print("starting interp point loop for {0} points".format(df.shape[0]))
         start_loop = datetime.now()
         for idx, (ix, iy) in enumerate(zip(df.x, df.y)):
@@ -1218,21 +1347,22 @@ class OrdinaryKrige(object):
                 inames.append([])
                 idist.append([])
                 ifacts.append([])
-                err_var.append(np.NaN)
+                err_var.append(np.nan)
                 continue
             if verbose:
                 istart = datetime.now()
                 print("processing interp point:{0} of {1}".format(idx, df.shape[0]))
-            # if verbose == 2:
-            #     start = datetime.now()
-            #     print("calc ipoint dist...",end='')
+            if verbose == 2:
+                start = datetime.now()
+                print("calc ipoint dist...", end='')
 
             #  calc dist from this interp point to all point data...slow
             # dist = pd.Series((ptx_array-ix)**2 + (pty_array-iy)**2,ptnames)
             # dist.sort_values(inplace=True)
             # dist = dist.loc[dist <= sqradius]
             # def _dist_calcs(self, ix, iy, ptx_array, pty_array, ptnames, sqradius):
-            dist = self._dist_calcs(ix, iy, ptx_array, pty_array, ptnames, sqradius)
+            dist = self._dist_calcs(ix, iy, ptx_array, pty_array, ptnames,
+                                    sqradius)
 
             # if too few points were found, skip
             if len(dist) < minpts_interp:
@@ -1243,13 +1373,14 @@ class OrdinaryKrige(object):
                 continue
 
             # only the maxpts_interp points
-            dist = dist.iloc[:maxpts_interp].apply(np.sqrt)
-            pt_names = dist.index.values
+            pt_names = dist.index.values[:maxpts_interp]
+            dist = np.sqrt(dist.values[:maxpts_interp])
+            
             # if one of the points is super close, just use it and skip
             if dist.min() <= EPSILON:
                 ifacts.append([1.0])
                 idist.append([EPSILON])
-                inames.append([dist.idxmin()])
+                inames.append([pt_names[dist.argmin()]])
                 err_var.append(self.geostruct.nugget)
                 continue
             # if verbose == 2:
@@ -1300,7 +1431,7 @@ class OrdinaryKrige(object):
                     inames.append([])
                     idist.append([])
                     ifacts.append([])
-                    err_var.append(np.NaN)
+                    err_var.append(np.nan)
                     continue
                 else:
                     raise Exception("error solving for factors:{0}".format(str(e)))
@@ -1308,14 +1439,15 @@ class OrdinaryKrige(object):
 
             err_var.append(
                 float(
-                    sill
-                    + facs[-1]
-                    - sum([f * c for f, c in zip(facs[:-1], interp_cov)])
+                    (sill
+                     + facs[-1]
+                     - sum([f * c for f, c in zip(facs[:-1], interp_cov)])
+                     ).squeeze()
                 )
             )
             inames.append(pt_names)
 
-            idist.append(dist.values)
+            idist.append(dist)
             ifacts.append(facs[:-1, 0])
             # if verbose == 2:
             #     td = (datetime.now()-start).total_seconds()
@@ -1334,7 +1466,7 @@ class OrdinaryKrige(object):
             if self.interp_data is None:
                 self.interp_data = df
             else:
-                self.interp_data = self.interp_data.append(df)
+                self.interp_data = pd.concat([self.interp_data, df])
         # correct for negative kriging factors, if requested
         if remove_negative_factors == True:
             self._remove_neg_factors()
@@ -1344,8 +1476,10 @@ class OrdinaryKrige(object):
 
     def _calc_factors_mp(
         self,
-        x,
-        y,
+        df,
+        ptx_array,
+        pty_array,
+        ptnames,
         minpts_interp=1,
         maxpts_interp=20,
         search_radius=1.0e10,
@@ -1353,32 +1487,26 @@ class OrdinaryKrige(object):
         pt_zone=None,
         forgive=False,
         num_threads=1,
-        idx_vals=None,
-        remove_negative_factors=True
+        remove_negative_factors=True,
     ):
-        start_loop = datetime.now()
-        assert len(x) == len(y)
-        if idx_vals is not None and len(idx_vals) != len(x):
-            raise Exception("len(idx_vals) != len(x)")
-        # find the point data to use for each interp point
-        df = pd.DataFrame(data={"x": x, "y": y})
-        if idx_vals is not None:
-            df.index = [int(i) for i in idx_vals]
+        sqradius = search_radius ** 2
         print("starting interp point loop for {0} points".format(df.shape[0]))
+        start_loop = datetime.now()
+        # ensure same order as point data and just pass array
+        # ptnames = ptd.name
+        # point_data = self.point_data.loc[self.point_data.zone == pt_zone]
+        point_cov_data = self.point_cov_df.loc[ptnames, ptnames].values
+        point_pairs = [(i, xx, yy) for i, (xx, yy) in enumerate(zip(df.x, df.y))]
+        idist = [[]] * len(df.x)
+        inames = [[]] * len(df.x)
+        ifacts = [[]] * len(df.x)
+        err_var = [np.nan] * len(df.x)
         with mp.Manager() as manager:
-
-            point_pairs = manager.list()
-            idist = manager.list()
-            inames = manager.list()
-            ifacts = manager.list()
-            err_var = manager.list()
-            # start = mp.Value('d',0)
-            for i, (xx, yy) in enumerate(zip(x, y)):
-                point_pairs.append((i, xx, yy))
-                idist.append([])
-                inames.append([])
-                ifacts.append([])
-                err_var.append([np.NaN])
+            point_pairs = manager.list(point_pairs)
+            idist = manager.list(idist)
+            inames = manager.list(inames)
+            ifacts = manager.list(ifacts)
+            err_var = manager.list(err_var)
             lock = mp.Lock()
             procs = []
             for i in range(num_threads):
@@ -1386,18 +1514,18 @@ class OrdinaryKrige(object):
                 p = mp.Process(
                     target=OrdinaryKrige._worker,
                     args=(
-                        i,
-                        self.point_data,
+                        ptx_array,
+                        pty_array,
+                        ptnames,
                         point_pairs,
                         inames,
                         idist,
                         ifacts,
                         err_var,
-                        self.point_cov_df,
+                        point_cov_data,
                         self.geostruct,
                         EPSILON,
-                        search_radius,
-                        pt_zone,
+                        sqradius,
                         minpts_interp,
                         maxpts_interp,
                         lock,
@@ -1408,11 +1536,14 @@ class OrdinaryKrige(object):
             for p in procs:
                 p.join()
 
-            df["idist"] = [i[0] for i in idist]
-            df["inames"] = [i[0] for i in inames]
-            df["ifacts"] = [i[0] for i in ifacts]
+            df[["idist", "inames", "ifacts"]] = pd.DataFrame(
+                [[s[0], n[0], f[0]] for s, n, f in zip(idist, inames, ifacts)],
+                columns=["idist", "inames", "ifacts"], index=df.index)
 
-            df["err_var"] = [float(e[0]) if not isinstance(e[0],list) else float(e[0][0]) for e in err_var]
+            df["err_var"] = [
+                float(e[0]) if not isinstance(e[0], list) else float(e[0][0])
+                for e in err_var
+            ]
 
         if pt_zone is None:
             self.interp_data = df
@@ -1420,7 +1551,7 @@ class OrdinaryKrige(object):
             if self.interp_data is None:
                 self.interp_data = df
             else:
-                self.interp_data = self.interp_data.append(df)
+                self.interp_data = pd.concat([self.interp_data, df])
         # correct for negative kriging factors, if requested
         if remove_negative_factors == True:
             self._remove_neg_factors()
@@ -1430,35 +1561,23 @@ class OrdinaryKrige(object):
 
     @staticmethod
     def _worker(
-        ithread,
-        point_data,
+        ptx_array,
+        pty_array,
+        ptnames,
         point_pairs,
         inames,
         idist,
         ifacts,
         err_var,
-        point_cov_df,
+        full_point_cov,
         geostruct,
         epsilon,
-        search_radius,
-        pt_zone,
+        sqradius,
         minpts_interp,
         maxpts_interp,
         lock,
     ):
-        # find the point data to use for each interp point
-        sqradius = search_radius ** 2
-
         sill = geostruct.sill
-        if pt_zone is None:
-            ptx_array = point_data.x.values
-            pty_array = point_data.y.values
-            ptnames = point_data.name.values
-        else:
-            pt_data = point_data
-            ptx_array = pt_data.loc[pt_data.zone == pt_zone, "x"].values
-            pty_array = pt_data.loc[pt_data.zone == pt_zone, "y"].values
-            ptnames = pt_data.loc[pt_data.zone == pt_zone, "name"].values
         while True:
             if len(point_pairs) == 0:
                 return
@@ -1471,28 +1590,25 @@ class OrdinaryKrige(object):
             # if idx % 1000 == 0 and idx != 0:
             #    print (ithread, idx,"done",datetime.now())
             if np.isnan(ix) or np.isnan(iy):  # if nans, skip
-                # inames.append([])
-                # idist.append([])
-                # ifacts.append([])
-                # err_var.append(np.NaN)
-                # err_var.insert(idx,np.NaN)
                 ifacts[idx] = [[]]
                 idist[idx] = [[]]
                 inames[idx] = [[]]
-                err_var[idx] = [np.NaN]
+                err_var[idx] = [np.nan]
                 continue
 
-            #  calc dist from this interp point to all point data...slow
-            dist = pd.Series((ptx_array - ix) ** 2 + (pty_array - iy) ** 2, ptnames)
-            dist.sort_values(inplace=True)
-            dist = dist.loc[dist <= sqradius]
+            # calc dist from this interp point to all point data...
+            # can we just use a numpy approach...?
+            dist = (ptx_array - ix) ** 2 + (pty_array - iy) ** 2
+            sortorder = np.argsort(dist)
+            dist = dist[sortorder]
+            pt_names = ptnames[sortorder]
+            trunc = dist <= sqradius
+            dist = dist[trunc]
+            pt_names = pt_names[trunc]
+            sortorder = sortorder[trunc]
 
             # if too few points were found, skip
             if len(dist) < minpts_interp:
-                # inames.append([])
-                # idist.append([])
-                # ifacts.append([])
-                # err_var.append(sill)
                 ifacts[idx] = [[]]
                 idist[idx] = [[]]
                 inames[idx] = [[]]
@@ -1500,32 +1616,30 @@ class OrdinaryKrige(object):
                 continue
 
             # only the maxpts_interp points
-            dist = dist.iloc[:maxpts_interp].apply(np.sqrt)
-            pt_names = dist.index.values
+            dist = np.sqrt(dist[:maxpts_interp])
+            pt_names = pt_names[:maxpts_interp]
+            sortorder = sortorder[:maxpts_interp]
+
             # if one of the points is super close, just use it and skip
-            if dist.min() <= epsilon:
-                # ifacts.append([1.0])
+            if dist[0] <= epsilon:
                 ifacts[idx] = [[1.0]]
-                # idist.append([epsilon])
                 idist[idx] = [[epsilon]]
-                # inames.append([dist.idxmin()])
-                inames[idx] = [[dist.idxmin()]]
-                # err_var.append(geostruct.nugget)
+                inames[idx] = [[pt_names[0]]]
                 err_var[idx] = [[geostruct.nugget]]
                 continue
 
             # vextract the point-to-point covariance matrix
-            point_cov = point_cov_df.loc[pt_names, pt_names]
-
+            # point_cov = full_point_cov.loc[pt_names, pt_names]
+            point_cov = full_point_cov[tuple([sortorder[:, None], sortorder])]
             # calc the interp point to points covariance
             interp_cov = geostruct.covariance_points(
-                ix, iy, point_data.loc[pt_names, "x"], point_data.loc[pt_names, "y"]
+                ix, iy, ptx_array[sortorder], pty_array[sortorder]
             )
 
             # form the linear algebra parts and solve
             d = len(pt_names) + 1  # +1 for lagrange mult
             A = np.ones((d, d))
-            A[:-1, :-1] = point_cov.values
+            A[:-1, :-1] = point_cov  # .values
             A[-1, -1] = 0.0  # unbiaised constraint
             rhs = np.ones((d, 1))
             rhs[:-1, 0] = interp_cov
@@ -1538,26 +1652,21 @@ class OrdinaryKrige(object):
                 print("dist:", dist)
                 print("A:", A)
                 print("rhs:", rhs)
-
-                # inames.append([])
-                # idist.append([])
-                # ifacts.append([])
-                # err_var.append(np.NaN)
-                # err_var.insert(np.NaN)
                 continue
 
             assert len(facs) - 1 == len(dist)
 
-            # err_var.append(float(sill + facs[-1] - sum([f*c for f,c in zip(facs[:-1],interp_cov)])))
-            err_var[idx] = [float(sill + facs[-1] - sum([f * c for f, c in zip(facs[:-1], interp_cov)]))]
-            # inames.append(pt_names)
-            inames[idx] = [list(pt_names)]
-
-            # idist.append(dist.values)
-            idist[idx] = [list(dist.values)]
-
-            # ifacts.append(facs[:-1,0])
-            ifacts[idx] = [list(facs[:-1, 0])]
+            err_var[idx] = [
+                float(
+                    (sill
+                     + facs[-1]
+                     - sum([f * c for f, c in zip(facs[:-1], interp_cov)])
+                     ).squeeze()
+                )
+            ]
+            inames[idx] = [pt_names.tolist()]
+            idist[idx] = [dist.tolist()]
+            ifacts[idx] = [facs[:-1, 0].tolist()]
             # if verbose == 2:
             #     td = (datetime.now()-start).total_seconds()
             #     print("...took {0}".format(td))
@@ -1598,6 +1707,9 @@ class OrdinaryKrige(object):
             nrow = 1
             if ncol < self.interp_data.shape[0]:
                 raise Exception("something is wrong")
+        elif self.spatial_reference.grid_type=='vertex':
+            nrow = self.spatial_reference.ncpl
+            ncol = 1
         else:
             nrow = self.spatial_reference.nrow
             ncol = self.spatial_reference.ncol
@@ -1694,7 +1806,7 @@ class Vario2d(object):
 
     @property
     def rotation_coefs(self):
-        """get the rotation coefficents in radians
+        """get the rotation coefficients in radians
 
         Returns:
             [`float`]: the rotation coefficients implied by `Vario2d.bearing`
@@ -1848,7 +1960,7 @@ class Vario2d(object):
         return self._h_function(h)
 
     def covariance(self, pt0, pt1):
-        """get the covarince between two points implied by Vario2d
+        """get the covariance between two points implied by Vario2d
 
         Args:
             pt0 : ([`float`]): first point x and y
@@ -2295,7 +2407,7 @@ def load_sgems_exp_var(filename):
             for item in attrib:
                 print(item, item.tag)
         df = pd.DataFrame({"x": x, "y": y, "pairs": pairs})
-        df.loc[df.y < 0.0, "y"] = np.NaN
+        df.loc[df.y < 0.0, "y"] = np.nan
         dfs[title] = df
     return dfs
 
@@ -2350,7 +2462,7 @@ def fac2real(
                 type(pp_file)
             )
         )
-    assert os.path.exists(factors_file), "factors file not found"
+    assert os.path.exists(factors_file), "factors file {0} not found".format(factors_file)
     f_fac = open(factors_file, "r")
     fpp_file = f_fac.readline()
     if pp_file is None and pp_data is None:
@@ -2374,23 +2486,17 @@ def fac2real(
     arr = np.zeros((nrow, ncol), dtype=np.float64) + fill_value
     pp_dict = {int(name): val for name, val in zip(pp_data.index, pp_data.parval1)}
     try:
-        pp_dict_log = {
-            name: np.log10(val) for name, val in zip(pp_data.index, pp_data.parval1)
-        }
+        pp_dict_log = np.log10(pp_data.parval1).to_dict()
     except:
         pp_dict_log = {}
-    # for i in range(nrow):
-    #    for j in range(ncol):
     while True:
         line = f_fac.readline()
         if len(line) == 0:
-            # raise Exception("unexpected EOF in factors file")
             break
         try:
-            inode, itrans, fac_data = _parse_factor_line(line)
+            inode, itrans, fac_data = _parse_factor_line(line,f_fac)
         except Exception as e:
             raise Exception("error parsing factor line {0}:{1}".format(line, str(e)))
-        # fac_prods = [pp_data.loc[pp,"value"]*fac_data[pp] for pp in fac_data]
         if itrans == 0:
             fac_sum = sum([pp_dict[pp] * fac_data[pp] for pp in fac_data])
         else:
@@ -2406,25 +2512,51 @@ def fac2real(
     arr[arr < lower_lim] = lower_lim
     arr[arr > upper_lim] = upper_lim
 
-    # print(out_file,arr.min(),pp_data.parval1.min(),lower_lim)
-
     if out_file is not None:
         np.savetxt(out_file, arr, fmt="%15.6E", delimiter="")
         return out_file
     return arr
 
 
-def _parse_factor_line(line):
+def _parse_factor_line(first_line,f_fac):
     """function to parse a factor file line.  Used by fac2real()"""
-
-    raw = line.strip().split()
+    
+    raw = first_line.strip().split()
     inode, itrans, nfac = [int(i) for i in raw[:3]]
-    fac_data = {
-        int(raw[ifac]) - 1: float(raw[ifac + 1]) for ifac in range(4, 4 + nfac * 2, 2)
-    }
-    # fac_data = {}
-    # for ifac in range(4,4+nfac*2,2):
-    #     pnum = int(raw[ifac]) - 1 #zero based to sync with pandas
-    #     fac = float(raw[ifac+1])
-    #     fac_data[pnum] = fac
+    nitems = nfac * 2
+    items = raw[4:]
+    while len(items) < nitems:
+        line = f_fac.readline()
+        if len(line) == 0:
+            raise Exception("fac2real error: Eof while reading terrible wrapped format")
+        raw = line.strip().split()
+        items.extend(raw)
+    if nitems != len(items):
+        raise Exception("fac2real error: error dealing with terrible wrapped format")
+    fac_data = {int(items[i])-1:float(items[i+1]) for i in range(0,len(items),2)}    
     return inode, itrans, fac_data
+
+def reformat_factorfile(nrow,ncol,point_data,geostruct,ppu_factor_filename):
+    f_in = open(ppu_factor_filename,'r')
+    f_out = open("temp.fac",'w')
+    f_out.write("points.junk\nzone.junk\n")
+    f_out.write("{0} {1}\n".format(ncol,nrow))
+    f_out.write("{0}\n".format(point_data.shape[0]))
+    [f_out.write("{0}\n".format(name)) for name in point_data.name]
+    t = 0
+    if geostruct.transform == "log":
+        t = 1
+    t = str(t)
+    f_in.readline()
+    f_in.readline()
+    for line in f_in:
+        raw = line.strip().split()
+        raw.insert(1,t)
+        line = " ".join(raw)
+        f_out.write(line+"\n")
+    f_in.close()
+    f_out.close()
+    shutil.copy2("temp.fac",ppu_factor_filename)
+    os.remove("temp.fac")
+
+

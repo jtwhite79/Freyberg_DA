@@ -3,6 +3,7 @@ import os
 import copy
 import struct
 import warnings
+from pathlib import Path
 import numpy as np
 import pandas as pd
 
@@ -36,7 +37,7 @@ def save_coo(x, row_names, col_names, filename, chunk=None):
     header = np.array((x.shape[1], x.shape[0], x.nnz), dtype=Matrix.binary_header_dt)
     header.tofile(f)
 
-    data = np.core.records.fromarrays([x.row, x.col, x.data], dtype=Matrix.coo_rec_dt)
+    data = np.rec.fromarrays([x.row, x.col, x.data], dtype=Matrix.coo_rec_dt)
     data.tofile(f)
 
     for name in col_names:
@@ -552,8 +553,10 @@ class Matrix(object):
                 )
             elif second.isdiagonal:
                 x = first.x
-                for j in range(second.shape[0]):
-                    x[j, j] += second.x[j]
+                js = range(second.shape[0])
+                x[js, js] += second.x.ravel()
+                # for j in range(second.shape[0]):
+                #     x[j, j] += second._Matrix__x[j,0]
                 return type(self)(
                     x=x, row_names=first.row_names, col_names=first.col_names
                 )
@@ -585,7 +588,7 @@ class Matrix(object):
             if `Matrix` and other (if applicable) have `autoalign` set to `True`,
             both `Matrix` and `other` are aligned based on row and column names.
             If names are not common between the two, this may result in a smaller
-            returned `Matrix`.  If not common elements are shared, an excetion is raised
+            returned `Matrix`.  If not common elements are shared, an exception is raised
 
 
         Example::
@@ -1021,7 +1024,7 @@ class Matrix(object):
         Returns:
             `numpy.ndarray` : numpy.ndarray
 
-        Exmaple::
+        Example::
 
             # A diagonal cov
             cov = pyemu.Cov.from_parameter_data
@@ -1041,7 +1044,7 @@ class Matrix(object):
         Returns:
             `Martrix`: non-diagonal form of `Matrix`
 
-        Exmaple::
+        Example::
 
             # A diagonal cov
             cov = pyemu.Cov.from_parameter_data
@@ -1065,7 +1068,7 @@ class Matrix(object):
         Returns:
             `int`: length of 2 tuple
 
-        Exmaple::
+        Example::
 
             jco = pyemu.Jco.from_binary("pest.jcb")
             shape = jco.shape
@@ -1212,7 +1215,7 @@ class Matrix(object):
                 singular value, the index of this singular is returned.
 
         Returns:
-            `int`: the index of the singular value whos ratio with the
+            `int`: the index of the singular value who's ratio with the
             first singular value is less than or equal to `eigthresh`
 
 
@@ -1243,7 +1246,7 @@ class Matrix(object):
                 singular value, the index of this singular is returned.
 
         Returns:
-            `int`: the index of the singular value whos ratio with the
+            `int`: the index of the singular value who's ratio with the
             first singular value is less than or equal to `eigthresh`
 
         Note:
@@ -1485,7 +1488,7 @@ class Matrix(object):
 
     @staticmethod
     def find_rowcol_indices(names, row_names, col_names, axis=None):
-        """fast(er) look of row and colum names indices
+        """fast(er) look of row and column names indices
 
         Args:
             names ([`str`]): list of names to look for in `row_names` and/or `col_names` names
@@ -1861,7 +1864,7 @@ class Matrix(object):
         the read with `Matrix.from_binary()`.
 
         Args:
-            filename (`str`): filename to save binary file
+            filename (`str` or `Path`): filename to save binary file
             droptol (`float`): absolute value tolerance to make values
                 smaller `droptol` than zero.  Default is None (no dropping)
             chunk (`int`): number of elements to write in a single pass.
@@ -1894,7 +1897,7 @@ class Matrix(object):
 
         if chunk is None:
             flat = self.x[row_idxs, col_idxs].flatten()
-            data = np.core.records.fromarrays(
+            data = np.rec.fromarrays(
                 [row_idxs, col_idxs, flat], dtype=self.coo_rec_dt
             )
             data.tofile(f)
@@ -1905,7 +1908,7 @@ class Matrix(object):
                 # print(row_idxs[start],row_idxs[end])
                 # print("chunk",start,end)
                 flat = self.x[row_idxs[start:end], col_idxs[start:end]].flatten()
-                data = np.core.records.fromarrays(
+                data = np.rec.fromarrays(
                     [row_idxs[start:end], col_idxs[start:end], flat],
                     dtype=self.coo_rec_dt,
                 )
@@ -1979,8 +1982,9 @@ class Matrix(object):
             f (`file`): the file handle.  Only returned if `close` is False
 
         """
-
-        if isinstance(filename, str):
+        row_names = [str(r) for r in row_names]
+        col_names = [str(c) for c in col_names]
+        if isinstance(filename, (str, Path)):
             f = open(filename, "wb")
             header = np.array(
                 (0, -len(col_names), -len(col_names)), dtype=Matrix.binary_header_dt
@@ -2048,7 +2052,7 @@ class Matrix(object):
 
         if chunk is None:
             flat = self.x[row_idxs, col_idxs].flatten()
-            data = np.core.records.fromarrays([icount, flat], dtype=self.binary_rec_dt)
+            data = np.rec.fromarrays([icount, flat], dtype=self.binary_rec_dt)
             # write
             data.tofile(f)
         else:
@@ -2056,7 +2060,7 @@ class Matrix(object):
             while True:
                 # print(row_idxs[start],row_idxs[end])
                 flat = self.x[row_idxs[start:end], col_idxs[start:end]].flatten()
-                data = np.core.records.fromarrays(
+                data = np.rec.fromarrays(
                     [icount[start:end], flat], dtype=self.binary_rec_dt
                 )
                 data.tofile(f)
@@ -2072,7 +2076,7 @@ class Matrix(object):
                         name, self.par_length
                     )
                 )
-                name = name[: self.par_length - 1]
+                name = name[: self.par_length]
             elif len(name) < self.par_length:
                 for i in range(len(name), self.par_length):
                     name = name + " "
@@ -2084,7 +2088,7 @@ class Matrix(object):
                         name, self.obs_length
                     )
                 )
-                name = name[: self.obs_length - 1]
+                name = name[: self.obs_length]
             elif len(name) < self.obs_length:
                 for i in range(len(name), self.obs_length):
                     name = name + " "
@@ -2093,7 +2097,7 @@ class Matrix(object):
         f.close()
 
     @staticmethod
-    def read_dense(filename, forgive=False, close=True):
+    def read_dense(filename, forgive=False, close=True, only_rows=None):
         """read a dense-format binary file.
 
         Args:
@@ -2103,6 +2107,7 @@ class Matrix(object):
                 records are returned.  If False, an exception is raised for an
                 incomplete record
             close (`bool`): flag to close the filehandle.  Default is True
+            only_rows (`iterable`): rows to read.  If None, all rows are read
 
         Returns:
             tuple containing
@@ -2121,27 +2126,26 @@ class Matrix(object):
             f = open(filename, "rb")
         else:
             f = filename
-        # the header datatype
-        itemp1, itemp2, icount = np.fromfile(f, Matrix.binary_header_dt, 1)[0]
-        # print(itemp1,itemp2,icount)
-        if itemp1 != 0:
-            raise Exception("Matrix.read_dense() itemp1 != 0")
-        if itemp2 != icount:
-            raise Exception("Matrix.read_dense() itemp2 != icount")
-        ncol = np.abs(itemp2)
+
         col_names = []
         row_names = []
         data_rows = []
-        col_slens = np.fromfile(f, Matrix.integer, ncol)
+
+        row_names,row_offsets,col_names,success = Matrix.get_dense_binary_info(filename)
+        if not forgive and not success:
+            raise Exception("Matrix.read_dense(): error reading dense binary info")
+        if only_rows is not None:
+            missing = list(set(only_rows)-set(row_names))
+            if len(missing) > 0:
+                raise Exception("the following only_rows are missing:{0}".format(",".join(missing)))
+            only_offsets = [row_offsets[row_names.index(only_row)] for only_row in only_rows]
+            row_names = only_rows
+            row_offsets = only_offsets
+        ncol = len(col_names)
+
         i = 0
-        # for j in range(ncol):
-        for slen in col_slens:
-            # slen = np.fromfile(f, Matrix.integer,1)[0]
-            name = (
-                struct.unpack(str(slen) + "s", f.read(slen))[0].strip().lower().decode()
-            )
-            col_names.append(name)
-        while True:
+        for row_name,offset in zip(row_names,row_offsets):
+            f.seek(offset)
             try:
                 slen = np.fromfile(f, Matrix.integer, 1)[0]
             except Exception as e:
@@ -2167,7 +2171,6 @@ class Matrix(object):
                     break
                 else:
                     raise Exception("error reading row {0}: {1}".format(i, str(e)))
-            row_names.append(name)
             data_rows.append(data_row)
             i += 1
 
@@ -2175,6 +2178,91 @@ class Matrix(object):
         if close:
             f.close()
         return data_rows, row_names, col_names
+
+
+
+    @staticmethod
+    def get_dense_binary_info(filename):
+        """read the header and row and offsets for a dense binary file.
+
+        Parameters
+        ----------
+            filename (`str`): dense binary filename
+
+
+        Returns:
+            tuple containing
+
+            - **['str']**: list of row names
+            - **['int']**: list of row offsets
+            - **[`str`]**: list of col names
+            - **bool**: flag indicating successful reading of all records found
+
+
+        """
+        if not os.path.exists(filename):
+            raise Exception(
+                "Matrix.read_dense(): filename '{0}' not found".format(filename)
+            )
+        if isinstance(filename, str):
+            f = open(filename, "rb")
+        else:
+            f = filename
+        # the header datatype
+        itemp1, itemp2, icount = np.fromfile(f, Matrix.binary_header_dt, 1)[0]
+        # print(itemp1,itemp2,icount)
+        if itemp1 != 0:
+            raise Exception("Matrix.read_dense() itemp1 != 0")
+        if itemp2 != icount:
+            raise Exception("Matrix.read_dense() itemp2 != icount")
+        ncol = np.abs(itemp2)
+        col_slens = np.fromfile(f, Matrix.integer, ncol)
+        i = 0
+        col_names = []
+        for slen in col_slens:
+            name = (
+                struct.unpack(str(slen) + "s", f.read(slen))[0].strip().lower().decode()
+            )
+            col_names.append(name)
+        row_names = []
+        row_offsets = []
+        data_len = np.array(1,dtype=Matrix.double).itemsize * ncol
+        success = True
+        while True:
+            curr_pos = f.tell()
+            try:
+                slen = np.fromfile(f, Matrix.integer, 1)[0]
+            except Exception as e:
+                break
+            try:
+                name = (
+                    struct.unpack(str(slen) + "s", f.read(slen))[0]
+                    .strip()
+                    .lower()
+                    .decode()
+                )
+            except Exception as e:
+                    print("error reading row name {0}: {1}".format(i, str(e)))
+                    success = False
+                    break
+            try:
+                data_row = np.fromfile(f, Matrix.double, ncol)
+                if data_row.shape[0] != ncol:
+                    raise Exception(
+                        "incomplete data in row {0}: {1} vs {2}".format(
+                            i, data_row.shape[0], ncol))
+            except Exception as e:
+                print("error reading row data record {0}: {1}".format(i, str(e)))
+                success = False
+                break
+
+            row_offsets.append(curr_pos)
+            row_names.append(name)
+
+            i += 1
+        f.close()
+        return row_names,row_offsets,col_names,success
+
 
     @classmethod
     def from_binary(cls, filename, forgive=False):
@@ -2747,7 +2835,7 @@ class Jco(Matrix):
     """
 
     def __init(self, **kwargs):
-        """Jco constuctor takes the same arguments as Matrix.
+        """Jco constructor takes the same arguments as Matrix.
 
         Args:
             **kwargs (`dict`): constructor arguments for `Matrix`
@@ -2842,7 +2930,7 @@ class Cov(Matrix):
         mat.to_binary("mat.jco")
 
     Note:
-        `row_names` and `col_names` args are supported in the contructor
+        `row_names` and `col_names` args are supported in the constructor
         so support inheritance.  However, users should only pass `names`
 
     """
@@ -3119,12 +3207,17 @@ class Cov(Matrix):
         x = np.zeros((nobs, 1))
         onames = []
         ocount = 0
+        std_dict = {}
+        if "standard_deviation" in pst.observation_data.columns:
+            std_dict = pst.observation_data.standard_deviation.to_dict()
+            std_dict = {o:s**2 for o,s in std_dict.items() if pd.notna(s)}
         for weight, obsnme in zip(
             pst.observation_data.weight, pst.observation_data.obsnme
         ):
             w = float(weight)
             w = max(w, 1.0e-30)
-            x[ocount] = (1.0 / w) ** 2
+
+            x[ocount] = std_dict.get(obsnme,(1.0 / w) ** 2)
             ocount += 1
             onames.append(obsnme.lower())
         return cls(x=x, names=onames, isdiagonal=True)
@@ -3142,7 +3235,7 @@ class Cov(Matrix):
                 represent 4 * sigma.  Default is 4.0, representing approximately
                 95% confidence of implied normal distribution
             scale_offset (`bool`): flag to apply scale and offset to parameter upper and lower
-                bounds before calculating varaince. In some cases, not applying scale and
+                bounds before calculating variance. In some cases, not applying scale and
                 offset can result in undefined (log) variance.  Default is True.
 
         Returns:
@@ -3158,7 +3251,8 @@ class Cov(Matrix):
         return Cov.from_parameter_data(new_pst, sigma_range, scale_offset)
 
     @classmethod
-    def from_parameter_data(cls, pst, sigma_range=4.0, scale_offset=True):
+    def from_parameter_data(cls, pst, sigma_range=4.0, scale_offset=True,
+                            subset=None):
         """Instantiates a `Cov` from a pest control file parameter data section using
         parameter bounds as a proxy for uncertainty.
 
@@ -3170,8 +3264,9 @@ class Cov(Matrix):
                 represent 4 * sigma.  Default is 4.0, representing approximately
                 95% confidence of implied normal distribution
             scale_offset (`bool`): flag to apply scale and offset to parameter upper and lower
-                bounds before calculating varaince. In some cases, not applying scale and
+                bounds before calculating variance. In some cases, not applying scale and
                 offset can result in undefined (log) variance.  Default is True.
+            subset (`list`-like, optional): Subset of parameters to draw
 
         Returns:
             `Cov`: diagonal parameter `Cov` matrix created from parameter bounds
@@ -3180,25 +3275,42 @@ class Cov(Matrix):
             Calls `Cov.from_parameter_data()`
 
         """
-        npar = pst.npar_adj
+        if subset is not None:
+            missing = subset.difference(pst.par_names)
+            if not missing.empty:
+                warnings.warn(
+                    f"{len(missing)} parameter names not present in Pst:\n"
+                    f"{missing}", PyemuWarning
+                )
+                subset = subset.intersection(pst.par_names)
+            par_dat = pst.parameter_data.loc[subset, :]
+        else:
+            par_dat = pst.parameter_data
+        npar = (~par_dat.partrans.isin(["fixed", "tied"])).sum()
         x = np.zeros((npar, 1))
         names = []
         idx = 0
-        for i, row in pst.parameter_data.iterrows():
+        for i, row in par_dat.iterrows():
             t = row["partrans"]
             if t in ["fixed", "tied"]:
                 continue
-            if scale_offset:
-                lb = row.parlbnd * row.scale + row.offset
-                ub = row.parubnd * row.scale + row.offset
+            if "standard_deviation" in row.index and pd.notna(row["standard_deviation"]):
+                if t == "log":
+                    var = (np.log10(row["standard_deviation"])) ** 2
+                else:
+                    var = row["standard_deviation"] ** 2
             else:
-                lb = row.parlbnd
-                ub = row.parubnd
+                if scale_offset:
+                    lb = row.parlbnd * row.scale + row.offset
+                    ub = row.parubnd * row.scale + row.offset
+                else:
+                    lb = row.parlbnd
+                    ub = row.parubnd
 
-            if t == "log":
-                var = ((np.log10(np.abs(ub)) - np.log10(np.abs(lb))) / sigma_range) ** 2
-            else:
-                var = ((ub - lb) / sigma_range) ** 2
+                if t == "log":
+                    var = ((np.log10(np.abs(ub)) - np.log10(np.abs(lb))) / sigma_range) ** 2
+                else:
+                    var = ((ub - lb) / sigma_range) ** 2
             if np.isnan(var) or not np.isfinite(var):
                 raise Exception(
                     "Cov.from_parameter_data() error: "
@@ -3462,7 +3574,7 @@ class Cov(Matrix):
             import matplotlib.pyplot as plt
             cov = pyemu.Cov.from_ascii("pest.post.cov")
             cc = cov.to_pearson()
-            cc.x[cc.x==1.0] = np.NaN
+            cc.x[cc.x==1.0] = np.nan
             plt.imshow(cc)
 
         """
