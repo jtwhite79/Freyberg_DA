@@ -61,7 +61,6 @@ keep = ['oname:hds_otype:lst_usecol:arrobs_head_k:0_i:13_j:10',
  'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:34_j:10',
  'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:3_j:8',
  'oname:hds_otype:lst_usecol:arrobs_head_k:2_i:9_j:1',
- 'oname:cnc_otype:lst_usecol:arrobs_conc_k:0_i:26_j:11',
  'sfr_otype:lst_usecol:gage_1']
 keep_labels = keep.copy()
 keep_units = ["$m$" for _ in keep]
@@ -550,11 +549,11 @@ def test_extract_conc_state_obs(t_d):
     os.chdir(cwd)
     return fnames
 
-def setup_interface(org_ws, num_reals=10):
+def setup_interface(org_ws, num_reals=10,complex_pars=True):
     """copied from auto_pest.py
 
     """
-    np.random.seed(123456)
+    np.random.seed(pyemu.en.SEED)
 
     # run mf6
     tmp_ws = org_ws + "_temp"
@@ -693,7 +692,6 @@ def setup_interface(org_ws, num_reals=10):
         if len(arr_files) == 0:
             print("warning: no array files found for ", tag)
             continue
-
         # make sure each array file in nrow X ncol dimensions (not wrapped)
         # for arr_file in arr_files:
         #     print(ib.shape)
@@ -703,41 +701,44 @@ def setup_interface(org_ws, num_reals=10):
 
         # if this is the recharge tag
         if "rch" in tag:
-            # add one set of grid-scale parameters for all files
-            pf.add_parameters(filenames=arr_files, par_type="grid", par_name_base="rch_gr",
-                              pargp="rch_gr", zone_array=ib, upper_bound=ub, lower_bound=lb,
-                              geostruct=rch_gs)
+            if complex_pars:
+                # add one set of grid-scale parameters for all files
+                pf.add_parameters(filenames=arr_files, par_type="grid", par_name_base="rch_gr",
+                                  pargp="rch_gr", zone_array=ib, upper_bound=ub, lower_bound=lb,
+                                  geostruct=rch_gs)
 
-            # add one constant parameter for each array, and assign it a datetime
-            # so we can work out the temporal correlation
-            for arr_file in arr_files:
-                arr = np.loadtxt(os.path.join(template_ws, arr_file))
-                print(arr_file,arr.mean(),arr.std())
-                uub = arr.mean() * ub
-                llb = arr.mean() * lb
-                if "daily" in org_ws.lower():
-                    uub *= 5
-                    llb /= 5
-                kper = int(arr_file.split('.')[1].split('_')[-1]) - 1
-                pf.add_parameters(filenames=arr_file, par_type="constant", par_name_base=arr_file.split('.')[1] + "_cn",
-                                  pargp="rch_const", zone_array=ib, upper_bound=uub, lower_bound=llb,
-                                  par_style="direct")
+                # add one constant parameter for each array, and assign it a datetime
+                # so we can work out the temporal correlation
+                for arr_file in arr_files:
+                    arr = np.loadtxt(os.path.join(template_ws, arr_file))
+                    print(arr_file,arr.mean(),arr.std())
+                    uub = arr.mean() * ub
+                    llb = arr.mean() * lb
+                    if "daily" in org_ws.lower():
+                        uub *= 5
+                        llb /= 5
+                    kper = int(arr_file.split('.')[1].split('_')[-1]) - 1
+                    pf.add_parameters(filenames=arr_file, par_type="constant", par_name_base=arr_file.split('.')[1] + "_cn",
+                                      pargp="rch_const", zone_array=ib, upper_bound=uub, lower_bound=llb,
+                                      par_style="direct")
 
 
         # otherwise...
         else:
             # for each array add both grid-scale and pilot-point scale parameters
             for arr_file in arr_files:
-                pf.add_parameters(filenames=arr_file, par_type="grid", par_name_base=arr_file.split('.')[1] + "_gr",
-                                  pargp=arr_file.split('.')[1] + "_gr", zone_array=ib, upper_bound=ub, lower_bound=lb,
-                                  geostruct=grid_gs)
-                pf.add_parameters(filenames=arr_file, par_type="constant", par_name_base=arr_file.split('.')[1] + "_cn",
-                                  pargp=arr_file.split('.')[1] + "_cn", zone_array=ib, upper_bound=ub, lower_bound=lb,
-                                  geostruct=grid_gs)
+                if complex_pars:
+                    pf.add_parameters(filenames=arr_file, par_type="grid", par_name_base=arr_file.split('.')[1] + "_gr",
+                                      pargp=arr_file.split('.')[1] + "_gr", zone_array=ib, upper_bound=ub, lower_bound=lb,
+                                      geostruct=grid_gs)
                 pf.add_parameters(filenames=arr_file, par_type="pilotpoints",
                                   par_name_base=arr_file.split('.')[1] + "_pp",
                                   pargp=arr_file.split('.')[1] + "_pp", zone_array=ib, upper_bound=ub, lower_bound=lb,
                                   pp_space=5, geostruct=pp_gs)
+                pf.add_parameters(filenames=arr_file, par_type="constant", par_name_base=arr_file.split('.')[1] + "_cn",
+                                  pargp=arr_file.split('.')[1] + "_cn", zone_array=ib, upper_bound=ub, lower_bound=lb,
+                                  geostruct=grid_gs)
+                
 
     # add direct pars for the ic strt values
     tag = "ic_strt"
@@ -775,29 +776,34 @@ def setup_interface(org_ws, num_reals=10):
                                 lower_bound=-10000, upper_bound=10000, zone_array=zn_arr)
 
     # get all the list-type files associated with the wel package
-    list_files = [f for f in os.listdir(org_ws) if "freyberg6.wel_stress_period_data_" in f and f.endswith(".txt")]
-    # for each wel-package list-type file
-    for list_file in list_files:
-        kper = int(list_file.split(".")[1].split('_')[-1]) - 1
-        # add spatially constant, but temporally correlated parameter
-        pf.add_parameters(filenames=list_file, par_type="constant", par_name_base="twel_mlt_{0}".format(kper),
-                          pargp="twel_mlt".format(kper), index_cols=[0, 1, 2], use_cols=[3],
-                          upper_bound=5, lower_bound=0.2, datetime=dts[kper])
+    if complex_pars:
+        list_files = [f for f in os.listdir(org_ws) if "freyberg6.wel_stress_period_data_" in f and f.endswith(".txt")]
+        # for each wel-package list-type file
+        for list_file in list_files:
+            kper = int(list_file.split(".")[1].split('_')[-1]) - 1
+            # add spatially constant, but temporally correlated parameter
+            pf.add_parameters(filenames=list_file, par_type="constant", par_name_base="twel_mlt_{0}".format(kper),
+                              pargp="twel_mlt".format(kper), index_cols=[0, 1, 2], use_cols=[3],
+                              upper_bound=5, lower_bound=0.2, datetime=dts[kper])
 
-    lb,ub = .2,5
-    if "daily" in org_ws.lower():
-        lb, ub = .1, 10
-    # add temporally indep, but spatially correlated grid-scale parameters, one per well
-    pf.add_parameters(filenames=list_files, par_type="grid", par_name_base="wel_grid",
-                      pargp="wel_grid", index_cols=[0, 1, 2], use_cols=[3],
-                      upper_bound=ub, lower_bound=lb)
+        lb,ub = .2,5
+        if "daily" in org_ws.lower():
+            lb, ub = .1, 10
+        # add temporally indep, but spatially correlated grid-scale parameters, one per well
+        pf.add_parameters(filenames=list_files, par_type="grid", par_name_base="wel_grid",
+                          pargp="wel_grid", index_cols=[0, 1, 2], use_cols=[3],
+                          upper_bound=ub, lower_bound=lb)
 
-    # add grid-scale parameters for SFR reach conductance.  Use layer, row, col and reach
-    # number in the parameter names
+        # add grid-scale parameters for SFR reach conductance.  Use layer, row, col and reach
+        # number in the parameter names
+        pf.add_parameters(filenames="freyberg6.sfr_packagedata.txt", par_name_base="sfr_rhk",
+                          pargp="sfrgr_rhk", index_cols=[0, 1, 2, 3], use_cols=[9], upper_bound=10.,
+                          lower_bound=0.1,
+                          par_type="grid")
     pf.add_parameters(filenames="freyberg6.sfr_packagedata.txt", par_name_base="sfr_rhk",
-                      pargp="sfr_rhk", index_cols=[0, 1, 2, 3], use_cols=[9], upper_bound=20.,
-                      lower_bound=0.05,
-                      par_type="grid")
+                      pargp="sfrcn_rhk", index_cols=[0, 1, 2, 3], use_cols=[9], upper_bound=5.,
+                      lower_bound=0.2,
+                      par_type="constant")
 
     # add model run command
     pf.mod_sys_cmds.append("mf6")
@@ -813,29 +819,30 @@ def setup_interface(org_ws, num_reals=10):
     searchfor = ['head_k', 'conc_k']
     strt_pars = par.loc[par.parnme.str.contains('|'.join(searchfor)), "parnme"]
 
-    # set the first stress period to no pumping
-    first_wpar = "pname:twel_mlt_0_inst:0_ptype:cn_usecol:3_pstyle:m"
-    assert first_wpar in set(pst.par_names)
-    pf.pst.parameter_data.loc[first_wpar,"partrans"] = "fixed"
-    pf.pst.parameter_data.loc[first_wpar, "parval1"] = 5.0e-10
-    pf.pst.parameter_data.loc[first_wpar, "parlbnd"] = 1.0e-10
-    pf.pst.parameter_data.loc[first_wpar, "parubnd"] = 1.0e-9
+    if complex_pars:
+        # set the first stress period to no pumping
+        first_wpar = "pname:twel_mlt_0_inst:0_ptype:cn_usecol:3_pstyle:m"
+        assert first_wpar in set(pst.par_names)
+        pf.pst.parameter_data.loc[first_wpar,"partrans"] = "fixed"
+        pf.pst.parameter_data.loc[first_wpar, "parval1"] = 5.0e-10
+        pf.pst.parameter_data.loc[first_wpar, "parlbnd"] = 1.0e-10
+        pf.pst.parameter_data.loc[first_wpar, "parubnd"] = 1.0e-9
 
-    # fix the new stress well if present
-    new_wpar = par.loc[par.parnme.apply(lambda x: "wel_grid" in x and "idx0:0" in x),"parnme"]
-    m_lrc = (1,25,5)
-    if "daily" in template_ws:
-        m_lrc = (m_lrc[0],m_lrc[1]*3,m_lrc[2]*3)
-    if new_wpar.shape[0] > 0:
-        #new_wpar = "wel_grid_inst:0_usecol:3_idx0:{0}_idx1:{1}_idx2:{2}".format(m_lrc[0]-1,m_lrc[1]-1,m_lrc[2]-1)
-        new_wpar = "pname:wel_grid_inst:0_ptype:gr_usecol:3_pstyle:m_idx0:{0}_idx1:{1}_idx2:{2}".format(m_lrc[0]-1,m_lrc[1]-1,m_lrc[2]-1)
-        #print(new_wpar)
-        #print(pf.pst.par_names)
-        assert new_wpar in set(pf.pst.par_names),new_wpar
-    pf.pst.parameter_data.loc[new_wpar, "partrans"] = "fixed"
-    pf.pst.parameter_data.loc[new_wpar, "parval1"] = 1.0
-    pf.pst.parameter_data.loc[new_wpar, "parlbnd"] = 0.999999
-    pf.pst.parameter_data.loc[new_wpar, "parubnd"] = 1.000001
+        # fix the new stress well if present
+        new_wpar = par.loc[par.parnme.apply(lambda x: "wel_grid" in x and "idx0:0" in x),"parnme"]
+        m_lrc = (1,25,5)
+        if "daily" in template_ws:
+            m_lrc = (m_lrc[0],m_lrc[1]*3,m_lrc[2]*3)
+        if new_wpar.shape[0] > 0:
+            #new_wpar = "wel_grid_inst:0_usecol:3_idx0:{0}_idx1:{1}_idx2:{2}".format(m_lrc[0]-1,m_lrc[1]-1,m_lrc[2]-1)
+            new_wpar = "pname:wel_grid_inst:0_ptype:gr_usecol:3_pstyle:m_idx0:{0}_idx1:{1}_idx2:{2}".format(m_lrc[0]-1,m_lrc[1]-1,m_lrc[2]-1)
+            #print(new_wpar)
+            #print(pf.pst.par_names)
+            assert new_wpar in set(pf.pst.par_names),new_wpar
+        pf.pst.parameter_data.loc[new_wpar, "partrans"] = "fixed"
+        pf.pst.parameter_data.loc[new_wpar, "parval1"] = 1.0
+        pf.pst.parameter_data.loc[new_wpar, "parlbnd"] = 0.999999
+        pf.pst.parameter_data.loc[new_wpar, "parubnd"] = 1.000001
 
     # draw from the prior and save the ensemble in binary format
     pe = pf.draw(num_reals, use_specsim=True)
@@ -1485,7 +1492,7 @@ def map_complex_to_simple_bat(c_d,b_d,real_idx):
         gs = pyemu.geostats.GeoStruct(variograms=v)
         struct_dict[gs] = kobs.obsnme.iloc[1:13].to_list()
     assert bpst.nnz_obs == 180,bpst.nnz_obs
-
+    np.random.seed = pyemu.en.SEED
     noise = pyemu.helpers.autocorrelated_draw(pst=bpst,struct_dict=struct_dict,num_reals=1000)
 
 
@@ -4066,14 +4073,14 @@ if __name__ == "__main__":
 
     #### MAIN WORKFLOW ####
     #coarse scenario
-    #sync_phase(s_d = "monthly_model_files_1lyr_trnsprt_org")
-    #add_new_stress(m_d_org = "monthly_model_files_1lyr_trnsprt")
-    #c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=50)
-    b_d = setup_interface("monthly_model_files_1lyr_trnsprt_newstress",num_reals=50)
+    sync_phase(s_d = "monthly_model_files_1lyr_trnsprt_org")
+    add_new_stress(m_d_org = "monthly_model_files_1lyr_trnsprt")
+    c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=50)
+    b_d = setup_interface("monthly_model_files_1lyr_trnsprt_newstress",num_reals=50,complex_pars=False)
     
     ##s_d = monthly_ies_to_da(b_d,include_est_states=False)
 
-    #m_c_d = run_complex_prior_mc(c_d,num_workers=10)
+    m_c_d = run_complex_prior_mc(c_d,num_workers=10)
 
     b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
     #s_d = map_simple_bat_to_seq(b_d,"seq_monthly_model_files_template")
