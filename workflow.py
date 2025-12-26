@@ -115,7 +115,7 @@ def clean_master_dirs():
 
 
 def compare_mf6_freyberg(num_workers=10,num_reals=100,num_replicates=100,use_sim_states=True,
-                         run_ies=True,run_da=True,adj_init_states=True,seq_noptmax=1):
+                         run_ies=True,run_da=True,adj_init_states=True,noptmax=1):
     complex_dir = os.path.join('daily_model_files_master_prior')
     bat_dir = os.path.join('monthly_model_files_template')
     seq_dir = "seq_" + bat_dir
@@ -141,7 +141,7 @@ def compare_mf6_freyberg(num_workers=10,num_reals=100,num_replicates=100,use_sim
         ies_pst.pestpp_options["ies_drop_conflicts"] = False
         ies_pst.pestpp_options["ies_num_reals"] = num_reals
         ies_pst.pestpp_options["ies_use_mda"] = False
-        ies_pst.control_data.noptmax = 10
+        ies_pst.control_data.noptmax = noptmax
 
         #mark the future pars fixed
         par = ies_pst.parameter_data
@@ -162,46 +162,49 @@ def compare_mf6_freyberg(num_workers=10,num_reals=100,num_replicates=100,use_sim
         # run da          
 
         if run_da:
-            da_t_d = map_simple_bat_to_seq(ies_t_d, seq_dir)
+            raise NotImplementedError()
+            # da_t_d = map_simple_bat_to_seq(ies_t_d, seq_dir)
 
-            # prep that prior ensemble for da
-            da_pst = pyemu.Pst(os.path.join(da_t_d, "freyberg.pst"))
+            # # prep that prior ensemble for da
+            # da_pst = pyemu.Pst(os.path.join(da_t_d, "freyberg.pst"))
 
-            # set pestpp options for sequential da
-            da_pst.pestpp_options.pop("da_num_reals", None)
-            da_pst.pestpp_options.pop("ies_num_reals", None)
-            da_pst.pestpp_options["ies_no_noise"] = False
-            da_pst.pestpp_options["ies_verbose_level"] = 1
-            da_pst.pestpp_options.pop("ies_localizer", None)
-            da_pst.pestpp_options["ies_autoadaloc"] = False
-            da_pst.pestpp_options["ies_save_lambda_en"] = False
-            da_pst.pestpp_options["ies_drop_conflicts"] = False
-            da_pst.pestpp_options["ies_num_reals"] = num_reals
-            da_pst.pestpp_options["ies_use_mda"] = False
-            da_pst.pestpp_options["da_use_simulated_states"] = use_sim_states
-            if not adj_init_states:
-                par = da_pst.parameter_data
-                istate_pars = par.loc[par.parnme.str.startswith("direct_head"),"parnme"]
-                par.loc[istate_pars,"partrans"] = "fixed"
-            da_pst.control_data.noptmax = seq_noptmax
-            da_pst.write(os.path.join(da_t_d, "freyberg.pst"), version=2)
+            # # set pestpp options for sequential da
+            # da_pst.pestpp_options.pop("da_num_reals", None)
+            # da_pst.pestpp_options.pop("ies_num_reals", None)
+            # da_pst.pestpp_options["ies_no_noise"] = False
+            # da_pst.pestpp_options["ies_verbose_level"] = 1
+            # da_pst.pestpp_options.pop("ies_localizer", None)
+            # da_pst.pestpp_options["ies_autoadaloc"] = False
+            # da_pst.pestpp_options["ies_save_lambda_en"] = False
+            # da_pst.pestpp_options["ies_drop_conflicts"] = False
+            # da_pst.pestpp_options["ies_num_reals"] = num_reals
+            # da_pst.pestpp_options["ies_use_mda"] = False
+            # da_pst.pestpp_options["da_use_simulated_states"] = use_sim_states
+            # if not adj_init_states:
+            #     par = da_pst.parameter_data
+            #     istate_pars = par.loc[par.parnme.str.startswith("direct_head"),"parnme"]
+            #     par.loc[istate_pars,"partrans"] = "fixed"
+            # da_pst.control_data.noptmax = seq_noptmax
+            # da_pst.write(os.path.join(da_t_d, "freyberg.pst"), version=2)
 
-            m_da_dir = da_t_d.replace("template", "master")
-            pyemu.os_utils.start_workers(da_t_d, 'pestpp-da', "freyberg.pst", port=port,
-                                         num_workers=num_workers, master_dir=m_da_dir, verbose=True)
+            # m_da_dir = da_t_d.replace("template", "master")
+            # pyemu.os_utils.start_workers(da_t_d, 'pestpp-da', "freyberg.pst", port=port,
+            #                              num_workers=num_workers, master_dir=m_da_dir, verbose=True)
 
-            shutil.rmtree(da_t_d)
+            # shutil.rmtree(da_t_d)
 
         # run ies
         m_ies_dir = ies_t_d.replace("template","master")
 
         if run_ies:
-            pyemu.os_utils.start_workers(ies_t_d, 'pestpp-ies', "freyberg.pst", port=port,
-                                     num_workers=num_workers, master_dir=m_ies_dir, verbose=True)
-            # if os.path.exists(m_ies_dir):
-            #     shutil.rmtree(m_ies_dir)
-            # shutil.copytree(ies_t_d,m_ies_dir)
-            # pyemu.os_utils.run("pestpp-ies freyberg.pst",cwd=m_ies_dir)
+            if noptmax > 0 or noptmax == -1:
+                pyemu.os_utils.start_workers(ies_t_d, 'pestpp-ies', "freyberg.pst", port=port,
+                                         num_workers=num_workers, master_dir=m_ies_dir, verbose=True)
+            else:
+                if os.path.exists(m_ies_dir):
+                    shutil.rmtree(m_ies_dir)
+                shutil.copytree(ies_t_d,m_ies_dir)
+                pyemu.os_utils.run("pestpp-ies freyberg.pst",cwd=m_ies_dir)
         shutil.rmtree(ies_t_d)
 
 
@@ -814,8 +817,8 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True):
     # pf.mod_sys_cmds.append("mp7 freyberg6_mp_forward.mpsim")
 
     # build pest control file
-    pst = pf.build_pst('freyberg.pst')
-    par = pst.parameter_data
+    _ = pf.build_pst('freyberg.pst')
+    par = pf.pst.parameter_data
     searchfor = ['head_k', 'conc_k']
     strt_pars = par.loc[par.parnme.str.contains('|'.join(searchfor)), "parnme"]
 
@@ -855,11 +858,11 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True):
     pe.to_binary(os.path.join(template_ws, "prior.jcb"))
 
     # set some algorithmic controls
-    pst.control_data.noptmax = 0
+    pf.pst.control_data.noptmax = 0
     #pst.pestpp_options["additional_ins_delimiters"] = ","
 
     # ident the obs-par state linkage
-    obs = pst.observation_data
+    obs = pf.pst.observation_data
     state_obs = obs.loc[obs.obsnme.str.contains("arrobs_head"), :].copy()
     state_par = par.loc[par.parnme.str.contains('d_head'), :].copy()
     for v in ["k", "i", "j"]:
@@ -874,7 +877,7 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True):
     print(obs.state_par_link.dropna().shape)
 
     # ident the obs-par state linkage
-    obs = pst.observation_data
+    obs = pf.pst.observation_data
     state_obs = obs.loc[obs.obsnme.str.contains("arrobs_conc"), :].copy()
     state_par = par.loc[par.parnme.str.contains('d_conc'), :].copy()
     for v in ["k", "i", "j"]:
@@ -887,8 +890,10 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True):
     obs.loc[state_obs.obsnme, "state_par_link"] = state_obs.apply(lambda x: state_par_dict.get((x.kij), np.nan), axis=1)
     print(obs.state_par_link.dropna().shape)
 
+    df = pf.pst.add_pars_as_obs(pst_path=pf.new_d)
+    pf.pst.observation_data.loc[df.index,"weight"] = 0.0
     # write the control file
-    pst.write(os.path.join(pf.new_d, "freyberg.pst"),version=2)
+    pf.pst.write(os.path.join(pf.new_d, "freyberg.pst"),version=2)
 
     # run with noptmax = 0
     pyemu.os_utils.run("{0} freyberg.pst".format(
@@ -897,16 +902,16 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True):
     # make sure it ran
     res_file = os.path.join(pf.new_d, "freyberg.base.rei")
     assert os.path.exists(res_file), res_file
-    pst.set_res(res_file)
-    print(pst.phi)
+    pf.pst.set_res(res_file)
+    print(pf.pst.phi)
 
-    pst.control_data.noptmax = -1
+    pf.pst.control_data.noptmax = -1
 
     # define what file has the prior parameter ensemble
-    pst.pestpp_options["ies_par_en"] = "prior.jcb"
+    pf.pst.pestpp_options["ies_par_en"] = "prior.jcb"
 
     # write the updated pest control file
-    pst.write(os.path.join(pf.new_d, "freyberg.pst"),version=2)
+    pf.pst.write(os.path.join(pf.new_d, "freyberg.pst"),version=2)
     return template_ws
 
 def remove_ats():
@@ -1479,7 +1484,8 @@ def map_complex_to_simple_bat(c_d,b_d,real_idx):
         kobs.sort_values(by="time",inplace=True)
         obs.loc[kobs.obsnme,"distance"] = kobs.time.astype(float).values
         if "gage" in k:
-            obs.loc[kobs.obsnme[1:13], "standard_deviation"] = kobs.loc[kobs.obsnme.iloc[1:13],"obsval"].values * 0.2
+            obs.loc[kobs.obsnme[1:13], "standard_deviation"] = np.abs(kobs.loc[kobs.obsnme.iloc[1:13],"obsval"].values) * 0.2
+            obs.loc[kobs.obsnme[1:13], "standard_deviation"] = obs.loc[kobs.obsnme[1:13], "standard_deviation"].apply(lambda x: max(1.0,x))
 
             obs.loc[kobs.obsnme[1:13], "weight"] = 0.005
             obs.loc[kobs.obsnme[1:13], "lower_bound"] = 0.0
@@ -1488,7 +1494,7 @@ def map_complex_to_simple_bat(c_d,b_d,real_idx):
         else:
             obs.loc[kobs.obsnme[1:13], "standard_deviation"] = 1.0
             obs.loc[kobs.obsnme[1:13],"weight"] = 1.0
-        v = pyemu.geostats.ExpVario(contribution=1.0,a=365*1.5)
+        v = pyemu.geostats.ExpVario(contribution=1.0,a=365)
         gs = pyemu.geostats.GeoStruct(variograms=v)
         struct_dict[gs] = kobs.obsnme.iloc[1:13].to_list()
     assert bpst.nnz_obs == 168,bpst.nnz_obs
@@ -4052,7 +4058,7 @@ def plot_obs_v_sim_pub(subdir=".",post_iter=None):
     pp.close()
 
 
-def run_dsi_monthly_dirs(use_ae=False,posterior_training=False,num_reals=500):
+def run_dsi_monthly_dirs(use_ae=False,posterior_training=False,num_reals=500,noptmax=15):
     transforms = [
             {"type":"normal_score"}
             ]
@@ -4131,7 +4137,7 @@ def run_dsi_monthly_dirs(use_ae=False,posterior_training=False,num_reals=500):
         dpst.pestpp_options["ies_n_iter_reinflate"] = [999]
         #dpst.pestpp_options["ies_use_approx"] = False
         #dpst.pestpp_options["ies_reinflate_factor"] = [0.5,0.5]
-        dpst.control_data.noptmax = 15
+        dpst.control_data.noptmax = noptmax
         dpst.write(os.path.join(dsi_t_d,"dsi.pst"),version=2)
         pyemu.os_utils.run("pestpp-ies dsi.pst /e",cwd=dsi_t_d)
 
@@ -4178,7 +4184,7 @@ if __name__ == "__main__":
     b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
     
     compare_mf6_freyberg(num_workers=20, num_replicates=50,num_reals=100,use_sim_states=True,
-                        run_ies=True,run_da=False,adj_init_states=True)
+                        run_ies=True,run_da=False,adj_init_states=True,noptmax=10)
 
     run_dsi_monthly_dirs(posterior_training=True)
     run_dsi_monthly_dirs(posterior_training=False)
@@ -4188,7 +4194,9 @@ if __name__ == "__main__":
     #plot_domain()
     #plot_obs_v_sim_pub(subdir=".")
     #plot_obs_v_sim3(subdir=".")
-    plot_s_vs_s_pub_2(summarize=True)
+    
+    # plot_s_vs_s_pub_2(summarize=True)
+    
     #plot_s_vs_s_pub_2(summarize=True,subdir="missing_wel_pars")
 
     exit()
