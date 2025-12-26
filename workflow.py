@@ -825,7 +825,7 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True):
     if complex_pars:
         # set the first stress period to no pumping
         first_wpar = "pname:twel_mlt_0_inst:0_ptype:cn_usecol:3_pstyle:m"
-        assert first_wpar in set(pst.par_names)
+        assert first_wpar in set(pf.pst.par_names)
         pf.pst.parameter_data.loc[first_wpar,"partrans"] = "fixed"
         pf.pst.parameter_data.loc[first_wpar, "parval1"] = 5.0e-10
         pf.pst.parameter_data.loc[first_wpar, "parlbnd"] = 1.0e-10
@@ -1462,11 +1462,16 @@ def map_complex_to_simple_bat(c_d,b_d,real_idx):
             kk = k.replace("k:2", "k:0")
             cvals.index = cvals.index.map(lambda x: x.replace("k:2", "k:0") if kk in x else x)
     print(cvals)
-    d = set(bpst.obs_names) - set(cvals.index.tolist())
+    bpnames = set(bpst.par_names)
+    common_onames = [o for o in bpst.obs_names if o not in bpnames and "pname:conc" not in o and "pname:head" not in o]
+    #common_onames = bpst.obs_names
+    d = set(common_onames) - set(cvals.index.tolist())
     print(d)
-    obs.loc[:,"obsval"] = cvals.loc[bpst.obs_names]
+    obs.loc[common_onames,"obsval"] = cvals.loc[common_onames]
+    print(obs.obsval)
+    print(obs.obsval.loc[common_onames])
     assert obs.obsval.shape[0] == obs.obsval.dropna().shape[0]
-    assert cvals.loc[bpst.obs_names].shape[0] == cvals.loc[bpst.obs_names].dropna().shape[0]
+    assert cvals.loc[common_onames].shape[0] == cvals.loc[common_onames].dropna().shape[0]
 
     # set some weights - only the first 12 months (not counting spin up time)
     # just picked weights that seemed to balance-ish the one realization I looked at...
