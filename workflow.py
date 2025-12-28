@@ -3252,12 +3252,13 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
         s_b_oe_pt = pst.ies.get("obsen",bpost_iter)
         ireal = s_b_m_d.split("_")[-1]
         s_b_dict[ireal] = [pst,s_b_oe_pr,s_b_oe_pt]
-        dsi_mds = [d for d in os.listdir(".") if os.path.isdir(d) and s_b_m_d in d and "dsi" in d]
+        dsi_mds = [d for d in os.listdir(".") if os.path.isdir(d) and s_b_m_d+"_" in d and "dsi" in d]
+        print(dsi_mds)
         dsi_dict = {}
         for dsi_md in dsi_mds:
             ppst = pyemu.Pst(os.path.join(dsi_md,"dsi.pst"))
             prefix = " ".join(dsi_md.split("_")[5:])
-            assert prefix not in dsi_dict
+            assert prefix not in dsi_dict,"{0}, {1},{2}".format(dsi_md,prefix,",".join(dsi_dict.keys()))
             dpost_iter = ppst.ies.phiactual.iteration.max()
             dsi_dict[prefix] = [ppst,ppst.ies.obsen0,ppst.ies.get("obsen",dpost_iter)]
         s_b_dict[ireal].append(dsi_dict)
@@ -4063,7 +4064,7 @@ def plot_obs_v_sim_pub(subdir=".",post_iter=None):
     pp.close()
 
 
-def run_dsi_monthly_dirs(use_ae=False,posterior_training=False,num_reals=500,noptmax=15):
+def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,use_reals="all"):
     transforms = [
             {"type":"normal_score"}
             ]
@@ -4078,12 +4079,18 @@ def run_dsi_monthly_dirs(use_ae=False,posterior_training=False,num_reals=500,nop
             keeps.append(fobs)
         kobs = pd.concat(keeps)
         kobs.drop_duplicates(subset=["obsnme"],inplace=True)
-        
-        oe = pst.ies.obsen.copy()#loc[:,kobs.obsnme].copy()#get("obsen",pst.ies.phiactual.iteration.max()).loc[:,kobs.obsnme].copy()
-        lev0_vals = oe.index.get_level_values(0)
-        lev1_vals = oe.index.get_level_values(1)
-        idx = ["{0}-{1}".format(zero,one) for zero,one in zip(lev0_vals,lev1_vals)]
-        oe.index = idx
+        if use_reals == "all":
+            oe = pst.ies.obsen.copy()#loc[:,kobs.obsnme].copy()#get("obsen",pst.ies.phiactual.iteration.max()).loc[:,kobs.obsnme].copy()
+            lev0_vals = oe.index.get_level_values(0)
+            lev1_vals = oe.index.get_level_values(1)
+            idx = ["{0}-{1}".format(zero,one) for zero,one in zip(lev0_vals,lev1_vals)]
+            oe.index = idx
+        elif use_reals == "prior":
+            oe = pst.ies.obsen0.copy()#loc[:,kobs.obsnme].copy()#get("obsen",pst.ies.phiactual.iteration.max()).loc[:,kobs.obsnme].copy()
+        elif use_reals == "posterior":
+            oe = pst.ies.obsen.get("obsen",pst.ies.phiactual.iteration.max()).copy()
+        else:
+            raise NotImplementedError()
         if use_ae:
             dsi = pyemu.emulators.DSIAE(pst=pst, #optional...
               data = oe,
@@ -4103,16 +4110,16 @@ def run_dsi_monthly_dirs(use_ae=False,posterior_training=False,num_reals=500,nop
         else:
             dsi_t_d = m_d + "_dsi"
 
-
-        if posterior_training:
-            dsi_t_d += "_postrain"
+        dsi_t_d += "_usereals-" + use_reals
+        if pretraining is not None:
+            dsi_t_d += "_pretrain-" + pretraining
 
         dpst = dsi.prepare_pestpp(t_d = dsi_t_d,
                                   use_runstor=True)
 
         shutil.copy2(ies_path,os.path.join(dsi_t_d,os.path.split(ies_path)[-1]))
         shutil.copytree("pyemu",os.path.join(dsi_t_d,"pyemu"))
-        if posterior_training:
+        if pretraining == "posterior":
             post_oe_fname = "freyberg.{0}.obs.csv".format(pst.ies.phiactual.iteration.max())
             assert os.path.exists(os.path.join(m_d,post_oe_fname))
             dpst.pestpp_options["ies_include_base"] = False
@@ -4124,9 +4131,21 @@ def run_dsi_monthly_dirs(use_ae=False,posterior_training=False,num_reals=500,nop
                 dpst.pestpp_options["ies_obs_en"] = "expanded_posterior.csv"
             else:
                 raise NotImplementedError()
-                
+        elif pretraining == "prior":
+            post_oe_fname = "freyberg.0.obs.csv"
+            assert os.path.exists(os.path.join(m_d,post_oe_fname))
+            dpst.pestpp_options["ies_include_base"] = False
+            org_oe = pyemu.ObservationEnsemble.from_csv(pst=dpst,filename=os.path.join(m_d,post_oe_fname))
+            new_oe = org_oe.draw_new_ensemble(num_reals=num_reals,include_noise=False)
+            if not use_ae:
+                #shutil.copy2(os.path.join(m_d,post_oe_fname),os.path.join(dsi_t_d,post_oe_fname))
+                new_oe.to_csv(os.path.join(dsi_t_d,"expanded_posterior.csv"))
+                dpst.pestpp_options["ies_obs_en"] = "expanded_posterior.csv"
+            else:
+                raise NotImplementedError()
 
-        else:
+
+        elif pretraining is None:
             dpst.pestpp_options["ies_obs_en"] = pst.pestpp_options["ies_obs_en"]
             if not use_ae:
                 shutil.copy2(os.path.join(m_d,pst.pestpp_options["ies_obs_en"]),os.path.join(dsi_t_d,pst.pestpp_options["ies_obs_en"]))
@@ -4137,6 +4156,9 @@ def run_dsi_monthly_dirs(use_ae=False,posterior_training=False,num_reals=500,nop
                 noise.index = pe.index
                 noise.to_csv(os.path.join(dsi_t_d,pst.pestpp_options["ies_obs_en"]))
         
+        else:
+            raise NotImplementedError()
+
         dpst.pestpp_options["ies_num_reals"] = 500
         #dpst.pestpp_options["ies_multimodal_alpha"] = 0.99
         dpst.pestpp_options["ies_n_iter_reinflate"] = [999]
@@ -4146,7 +4168,7 @@ def run_dsi_monthly_dirs(use_ae=False,posterior_training=False,num_reals=500,nop
         dpst.write(os.path.join(dsi_t_d,"dsi.pst"),version=2)
         pyemu.os_utils.run("pestpp-ies dsi.pst /e",cwd=dsi_t_d)
 
-        if posterior_training:
+        if pretraining is not None:
             new_t_d = dsi_t_d + "_noisefit"
             if os.path.exists(new_t_d):
                 shutil.rmtree(new_t_d)
@@ -4169,8 +4191,6 @@ def run_dsi_monthly_dirs(use_ae=False,posterior_training=False,num_reals=500,nop
             pyemu.os_utils.run("pestpp-ies dsi.pst /e",cwd=new_t_d)
 
             
-        
-
 
 
 if __name__ == "__main__":
@@ -4182,7 +4202,7 @@ if __name__ == "__main__":
     sync_phase(s_d = "monthly_model_files_1lyr_trnsprt_org")
     add_new_stress(m_d_org = "monthly_model_files_1lyr_trnsprt")
     c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=50)
-    b_d = setup_interface("monthly_model_files_1lyr_trnsprt_newstress",num_reals=50,complex_pars=False)
+    b_d = setup_interface("monthly_model_files_1lyr_trnsprt_newstress",num_reals=50,complex_pars=True)
     
     m_c_d = run_complex_prior_mc(c_d,num_workers=10)
 
@@ -4191,8 +4211,14 @@ if __name__ == "__main__":
     compare_mf6_freyberg(num_workers=20, num_replicates=50,num_reals=100,use_sim_states=True,
                         run_ies=True,run_da=False,adj_init_states=True,noptmax=10)
 
-    run_dsi_monthly_dirs(posterior_training=True)
-    run_dsi_monthly_dirs(posterior_training=False)
+    run_dsi_monthly_dirs(pretraining="posterior")
+    run_dsi_monthly_dirs(pretraining="prior")
+    run_dsi_monthly_dirs(pretraining=None)
+
+    run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior")
+    run_dsi_monthly_dirs(pretraining="prior",use_reals="prior")
+    run_dsi_monthly_dirs(pretraining=None,use_reals="prior")
+    run_dsi_monthly_dirs(pretraining=None,use_reals="posterior")
     
 
     # plotting
@@ -4200,7 +4226,7 @@ if __name__ == "__main__":
     #plot_obs_v_sim_pub(subdir=".")
     #plot_obs_v_sim3(subdir=".")
     
-    # plot_s_vs_s_pub_2(summarize=True)
+    plot_s_vs_s_pub_2(summarize=True)
     
     #plot_s_vs_s_pub_2(summarize=True,subdir="missing_wel_pars")
 
