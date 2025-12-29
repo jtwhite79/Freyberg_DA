@@ -5,6 +5,7 @@ import sys
 import shutil
 import platform
 import string
+import multiprocessing as mp
 import numpy as np
 import pandas as pd
 import platform
@@ -4193,7 +4194,10 @@ def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,
             pyemu.os_utils.run("pestpp-ies dsi.pst /e",cwd=new_t_d)
        
 
-            
+def _spawn_dsi_process(kwargs):
+    p = mp.Process(target=run_dsi_monthly_dirs,kwargs=kwargs)
+    p.start()
+    return p
 
 
 if __name__ == "__main__":
@@ -4218,10 +4222,29 @@ if __name__ == "__main__":
     # run_dsi_monthly_dirs(pretraining="prior")
     # run_dsi_monthly_dirs(pretraining=None)
     num_replicates=10
-    run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates)
-    run_dsi_monthly_dirs(pretraining="prior",use_reals="prior",num_replicates=num_replicates)
-    run_dsi_monthly_dirs(pretraining=None,use_reals="prior",num_replicates=num_replicates)
-    run_dsi_monthly_dirs(pretraining=None,use_reals="posterior",num_replicates=num_replicates)
+    dsi_noptmax = 10
+
+    arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining=None,use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)]
+
+    procs = []
+    for arg_set in arg_sets:
+        p = _spawn_dsi_process(arg_set)
+        procs.append(p)
+
+    for p in procs:
+        p.join()
+    # run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
+    # run_dsi_monthly_dirs(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax)
+    # run_dsi_monthly_dirs(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax)
+    # run_dsi_monthly_dirs(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
+    # run_dsi_monthly_dirs(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)
+    # run_dsi_monthly_dirs(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)
     
 
     # plotting
