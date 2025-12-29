@@ -3240,7 +3240,8 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
     print("loading results...")
     m_ds = [d for d in os.listdir(".") if os.path.isdir(d) and d.startswith('monthly_model_files_master_') and "dsi" not in d]
     m_ds.sort()
-    
+    phim_dict = {}
+    phia_dict = {}
     for s_b_m_d in m_ds:
         pst = pyemu.Pst(os.path.join(s_b_m_d, "freyberg.pst"))
         
@@ -3252,16 +3253,25 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
             bpost_iter = post_iter
         s_b_oe_pt = pst.ies.get("obsen",bpost_iter)
         ireal = s_b_m_d.split("_")[-1]
-        s_b_dict[ireal] = [pst,s_b_oe_pr,s_b_oe_pt]
         dsi_mds = [d for d in os.listdir(".") if os.path.isdir(d) and s_b_m_d+"_" in d and "dsi" in d]
         print(dsi_mds)
+        if len(dsi_mds) == 0:
+            break
+        s_b_dict[ireal] = [pst,s_b_oe_pr,s_b_oe_pt]
+        phia_dict[ireal] = {"process":pst.ies.phiactual.iloc[:,6:]}
+        phim_dict[ireal] = {"process":pst.ies.phimeas.iloc[:,6:]}
+        
         dsi_dict = {}
         for dsi_md in dsi_mds:
+            if "pretrain" in dsi_md and "noise" not in dsi_md:
+                continue
             ppst = pyemu.Pst(os.path.join(dsi_md,"dsi.pst"))
             prefix = " ".join(dsi_md.split("_")[5:])
             assert prefix not in dsi_dict,"{0}, {1},{2}".format(dsi_md,prefix,",".join(dsi_dict.keys()))
             dpost_iter = ppst.ies.phiactual.iteration.max()
             dsi_dict[prefix] = [ppst,ppst.ies.obsen0,ppst.ies.get("obsen",dpost_iter)]
+            phia_dict[ireal][prefix] = ppst.ies.phiactual.iloc[:,6:]
+            phim_dict[ireal][prefix] = ppst.ies.phimeas.iloc[:,6:]
         s_b_dict[ireal].append(dsi_dict)
         print(ireal)
         
@@ -3274,18 +3284,19 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
 
     if len(s_b_dict) == 0:
         raise Exception()
-
+    num_ax = len(dsi_dict) + 1
+    num_ax_col = 3
+    num_ax_row = int(num_ax / num_ax_col)+1
     ireals = list(s_b_dict.keys())
     ireals.sort()
     sbobs_org = pst.observation_data
     print("plotting")
-    size,lw=3,0.5
     pname = os.path.join(subdir,"s_vs_s_pub.pdf")
     if subdir != ".":
         pname = pname.replace(".pdf","_"+subdir+".pdf")
     #if post_iter is not None:
     #    pname = os.path.join(subdir,"s_vs_s_postiter_{0}.pdf".format(post_iter))
-    dsi_colors = ["g","m","c"]
+    
     is_1_lay = True
     if True in [True if "k:2" in o else False for o in pst.obs_names]:
         is_1_lay = False
@@ -3294,7 +3305,76 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
     names = ["sw_1","gw_1",
              "gw forecast","headwater forecast\n   "]
     with PdfPages(pname) as pdf:
-        for ikeep, ogname in enumerate(sites):
+        fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10))
+        axes = axes.flatten()
+        for ireal in ireals:
+            phim = phim_dict[ireal]
+            phia = phia_dict[ireal]
+            keys = list(phim.keys())
+            keys.sort()
+            
+            for key,ax in zip(keys,axes):
+                pv = phim[key].iloc[-1,:]
+
+                mn = pv.mean()
+                lq = pv.quantile(0.05)
+                uq = pv.quantile(0.95)
+                ax.scatter([mn], [ireal],
+                                color="b", marker="o",alpha=0.35, s=10)
+                ax.plot([lq, uq], [ireal,ireal],
+                                color="b", alpha=0.35, lw=2.5)
+                ax.set_title(key + " measured phi")
+        mn = 1e300
+        mx = -1e300
+        for ax in axes:
+            ax.axvline(x=0.0,color="k",ls="--")
+            mn = min(mn,ax.get_xlim()[0])
+            mx = max(mx,ax.get_xlim()[1])
+        for ax in axes:
+            ax.set_xlim(mn,mx)
+            ax.grid()
+
+        plt.tight_layout()
+        pdf.savefig()
+        plt.close(fig)
+
+
+        fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10))
+        axes = axes.flatten()
+        for ireal in ireals:
+            phim = phim_dict[ireal]
+            phia = phia_dict[ireal]
+            keys = list(phim.keys())
+            keys.sort()
+            
+            for key,ax in zip(keys,axes):
+                pv = phia[key].iloc[-1,:]
+
+                mn = pv.mean()
+                lq = pv.quantile(0.05)
+                uq = pv.quantile(0.95)
+                ax.scatter([mn], [ireal],
+                                color="b", marker="o",alpha=0.35, s=10)
+                ax.plot([lq, uq], [ireal,ireal],
+                                color="b", alpha=0.35, lw=2.5)
+                ax.set_title(key + " actual phi")
+        mn = 1e300
+        mx = -1e300
+        for ax in axes:
+            ax.axvline(x=pst.nnz_obs,color="k",ls="--")
+            mn = min(mn,ax.get_xlim()[0])
+            mx = max(mx,ax.get_xlim()[1])
+        for ax in axes:
+            ax.set_xlim(mn,mx)
+            ax.grid()
+
+        plt.tight_layout()
+        pdf.savefig()
+        plt.close(fig)
+
+        
+
+        for ikeep, (label,ogname,name) in enumerate(zip(labels,sites,names)):
             # if "mass" not in ogname:
             #    continue
 
@@ -3307,7 +3387,14 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
             sgobs.loc[:, "time"] = sgobs.time.apply(float)
             # sgobs = sgobs.loc[sgobs.time.apply(lambda x: x > 10000 and x < 10366),:]
             sgobs.sort_values(by="time", inplace=True)
-            fig,axes = plt.subplots(2,1,figsize=(6,6))
+            fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10))
+            axes.flatten()
+
+
+
+
+            fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10),sharex=True,sharey=True)
+            axes = axes.flatten()
 
             for itime, oname in enumerate(sgobs.obsnme):
                 if itime != 12:
@@ -3317,65 +3404,44 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                     s_b_pst, s_b_oe_pr, s_b_oe_pt,dsi_dict = s_b_dict[ireal]
                     sbobs = s_b_pst.observation_data
                     sgobs = sbobs.loc[sbobs.obsnme.str.contains(k0ogname), :].copy()
-
-                    #s_s_pst, s_s_oe_dict_pr, s_s_oe_dict_pt = s_s_dict[ireal]
-
                     cval = sgobs.loc[oname, "obsval"].copy()
-
-                    # mn = s_b_oe_pr.loc[:, oname].mean()
-                    # lq = s_b_oe_pr.loc[:, oname].quantile(0.05)
-                    # uq = s_b_oe_pr.loc[:, oname].quantile(0.95)
-                    # axes[0, 0].scatter(mn, cval,
-                    #                   marker="o", color="0.5", alpha=0.5,s=size)
-                    # axes[0, 0].plot([lq,uq], [cval,cval],
-                    #                   color="0.5", alpha=0.5,lw=lw)
-
                     mn = s_b_oe_pt.loc[:, oname].mean()
                     lq = s_b_oe_pt.loc[:, oname].quantile(0.05)
                     uq = s_b_oe_pt.loc[:, oname].quantile(0.95)
                     axes[0].scatter(mn, cval,
-                                       marker="o", color="b", alpha=0.5, s=size)
+                                       marker="o", color="b", alpha=0.5, s=3)
                     axes[0].plot([lq, uq], [cval, cval],
-                                    color="b", alpha=0.5, lw=5.5)
-
-                    keys = list(dsi_dict)
+                                    color="b", alpha=0.35, lw=2.5)
+                    axes[0].set_title(label + " " + name + "\ntime 12\nprocess model")
+                    keys = list(dsi_dict)                
                     keys.sort()
-                    for key,color in zip(keys,dsi_colors):
-                        if not key.endswith("dsi"):
-                            continue
+                
+                    for key,ax in zip(keys,axes[1:]):
+               
                         s_b_oe_pt = dsi_dict[key][-1]
                         mn = s_b_oe_pt.loc[:, oname].mean()
                         lq = s_b_oe_pt.loc[:, oname].quantile(0.05)
                         uq = s_b_oe_pt.loc[:, oname].quantile(0.95)
-                        axes[0].scatter(mn, cval,
-                                           marker="o", color=color, alpha=0.5, s=size)
-                        axes[0].plot([lq, uq], [cval, cval],
-                                        color=color, alpha=0.5, lw=2.5)
-
-                    # seq_name = k0ogname
-                    # if "arrobs" not in k0ogname:
-                    #     seq_name = k0ogname + "_time:10000.0"
-
-                    # if itime in s_s_oe_dict_pr:
-                    #     oe = s_s_oe_dict_pr[itime]
-
-                    #     mn = oe.loc[:, seq_name].dropna().mean()
-                    #     lq = oe.loc[:, seq_name].dropna().quantile(0.05)
-                    #     uq = oe.loc[:, seq_name].dropna().quantile(0.95)
-                    #     axes[0, 1].scatter(mn, cval,
-                    #                        marker="o", color="0.5", alpha=0.5, s=size)
-                    #     axes[0, 1].plot([lq, uq], [cval, cval],
-                    #                     color="0.5", alpha=0.5, lw=lw)
-
-                    #     oe = s_s_oe_dict_pt[itime]
-
-                    #     mn = oe.loc[:, seq_name].dropna().mean()
-                    #     lq = oe.loc[:, seq_name].dropna().quantile(0.05)
-                    #     uq = oe.loc[:, seq_name].dropna().quantile(0.95)
-                    #     axes[0, 1].scatter(mn, cval,
-                    #                        marker="o", color="b", alpha=0.5, s=size)
-                    #     axes[0, 1].plot([lq, uq], [cval, cval],
-                    #                     color="b", alpha=0.35, lw=lw)
+                        ax.scatter(mn, cval,
+                                           marker="o", color='b', alpha=0.5, s=3)
+                        ax.plot([lq, uq], [cval, cval],
+                                        color='b', alpha=0.35, lw=2.5)
+                        ax.set_title(label + " " + name + "\ntime 12\n"+key)
+            
+            mn = min(ax.get_ylim()[0],ax.get_xlim()[0])
+            mx = max(ax.get_ylim()[1],ax.get_xlim()[1])
+            for ax in axes:
+                ax.plot([mn, mx], [mn, mx], "k--")
+                ax.set_xlim(mn,mx)
+                ax.set_ylim(mn,mx)
+                ax.set_aspect("equal")
+                ax.grid()
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close(fig)
+                
+            fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10),sharex=True,sharey=True)
+            axes = axes.flatten()   
             for itime, oname in enumerate(sgobs.obsnme):
                 if itime != 24:
                     continue
@@ -3384,91 +3450,62 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                     s_b_pst, s_b_oe_pr, s_b_oe_pt,dsi_dict = s_b_dict[ireal]
                     sbobs = s_b_pst.observation_data
                     sgobs = sbobs.loc[sbobs.obsnme.str.contains(k0ogname), :].copy()
-
-                    #s_s_pst, s_s_oe_dict_pr, s_s_oe_dict_pt = s_s_dict[ireal]
-
                     cval = sgobs.loc[oname, "obsval"].copy()
-
-                    # mn = s_b_oe_pr.loc[:, oname].mean()
-                    # lq = s_b_oe_pr.loc[:, oname].quantile(0.05)
-                    # uq = s_b_oe_pr.loc[:, oname].quantile(0.95)
-                    #axes[1, 0].scatter(mn, cval,
-                    #                   marker="o", color="0.5", alpha=0.5,s=size)
-                    #axes[1, 0].plot([lq,uq], [cval,cval],
-                    #                   color="0.5", alpha=0.5,lw=lw)
-
                     mn = s_b_oe_pt.loc[:, oname].mean()
                     lq = s_b_oe_pt.loc[:, oname].quantile(0.05)
                     uq = s_b_oe_pt.loc[:, oname].quantile(0.95)
-                    axes[1].scatter(mn, cval,
-                                     marker="o", color="b", alpha=0.5, s=size)
-                    axes[1].plot([lq, uq], [cval, cval],
-                                    color="b", alpha=0.5, lw=3.5)
-
-                    keys = list(dsi_dict)
+                    axes[0].scatter(mn, cval,
+                                       marker="o", color="b", alpha=0.5, s=3)
+                    axes[0].plot([lq, uq], [cval, cval],
+                                    color="b", alpha=0.35, lw=2.5)
+                    axes[0].set_title(label + " " + name + "\ntime 25\nprocess model")
+                    keys = list(dsi_dict)                
                     keys.sort()
-                    for key,color in zip(keys,dsi_colors):
-                        if not key.endswith("dsi"):
-                            continue
+                
+                    for key,ax in zip(keys,axes[1:]):
+               
                         s_b_oe_pt = dsi_dict[key][-1]
-                        try:
-                            mn = s_b_oe_pt.loc[:, oname].mean()
-                        except:
-                            break
-
+                        mn = s_b_oe_pt.loc[:, oname].mean()
                         lq = s_b_oe_pt.loc[:, oname].quantile(0.05)
                         uq = s_b_oe_pt.loc[:, oname].quantile(0.95)
-                        axes[1].scatter(mn, cval,
-                                           marker="o", color=color, alpha=0.5, s=size)
-                        axes[1].plot([lq, uq], [cval, cval],
-                                        color=color, alpha=0.5, lw=2.5)
-                    # seq_name = k0ogname
-                    # if "arrobs" not in k0ogname:
-                    #     seq_name = k0ogname + "_time:10000.0"
-
-                    # if itime in s_s_oe_dict_pr:
-                    #     oe = s_s_oe_dict_pr[itime]
-
-                    #     mn = oe.loc[:, seq_name].dropna().mean()
-                    #     lq = oe.loc[:, seq_name].dropna().quantile(0.05)
-                    #     uq = oe.loc[:, seq_name].dropna().quantile(0.95)
-                    #     axes[1, 1].scatter(mn, cval,
-                    #                        marker="o", color="0.5", alpha=0.5, s=size)
-                    #     axes[1, 1].plot([lq, uq], [cval, cval],
-                    #                     color="0.5", alpha=0.5, lw=lw)
-
-                        #oe = s_s_oe_dict_pt[itime]
-
-                        # mn = oe.loc[:, seq_name].dropna().mean()
-                        # lq = oe.loc[:, seq_name].dropna().quantile(0.05)
-                        # uq = oe.loc[:, seq_name].dropna().quantile(0.95)
-                        # axes[1, 1].scatter(mn, cval,
-                        #                    marker="o", color="b", alpha=0.5, s=size)
-                        # axes[1, 1].plot([lq, uq], [cval, cval],
-                        #                 color="b", alpha=0.5, lw=lw)
-
-
-
-            mn = 1.0e+10
-            mx = -12.0e+10
-            for ax in axes.flatten():
-                mn = min(mn,ax.get_xlim()[0], ax.get_ylim()[0])
-                mx = max(mx,ax.get_xlim()[1], ax.get_ylim()[1])
-
-            for ax in axes.flatten():
+                        ax.scatter(mn, cval,
+                                           marker="o", color='b', alpha=0.5, s=3)
+                        ax.plot([lq, uq], [cval, cval],
+                                        color='b', alpha=0.35, lw=2.5)
+                        ax.set_title(label + " " + name + "\ntime 25\n"+key)
+            
+            mn = min(ax.get_ylim()[0],ax.get_xlim()[0])
+            mx = max(ax.get_ylim()[1],ax.get_xlim()[1])
+            for ax in axes:
                 ax.plot([mn, mx], [mn, mx], "k--")
                 ax.set_xlim(mn,mx)
                 ax.set_ylim(mn,mx)
-                ax.set_xlabel("simple {0}".format(lab))
-                ax.set_ylabel("complex {0}".format(lab))
-            axes[0].set_title("A) {0} cycle 13".format(names[ikeep]),loc="left")
-            axes[1].set_title("B) {0} cycle 25".format(names[ikeep]),loc="left")
-            #axes[1, 0].set_title("C) {0} batch cycle 25".format(names[ikeep]),loc="left")
-            #axes[1, 1].set_title("D) {0} sequential cycle 25".format(names[ikeep]),loc="left")
-            #fig.suptitle(names[ikeep])
+                ax.set_aspect("equal")
+                ax.grid()
             plt.tight_layout()
             pdf.savefig(fig)
             plt.close(fig)
+
+            # mn = 1.0e+10
+            # mx = -12.0e+10
+            # for ax in axes.flatten():
+            #     mn = min(mn,ax.get_xlim()[0], ax.get_ylim()[0])
+            #     mx = max(mx,ax.get_xlim()[1], ax.get_ylim()[1])
+
+            # for ax in axes.flatten():
+            #     ax.plot([mn, mx], [mn, mx], "k--")
+            #     ax.set_xlim(mn,mx)
+            #     ax.set_ylim(mn,mx)
+            #     ax.set_xlabel("simple {0}".format(lab))
+            #     ax.set_ylabel("complex {0}".format(lab))
+            # axes[0].set_title("A) {0} cycle 13".format(names[ikeep]),loc="left")
+            # axes[1].set_title("B) {0} cycle 25".format(names[ikeep]),loc="left")
+            # #axes[1, 0].set_title("C) {0} batch cycle 25".format(names[ikeep]),loc="left")
+            # #axes[1, 1].set_title("D) {0} sequential cycle 25".format(names[ikeep]),loc="left")
+            # #fig.suptitle(names[ikeep])
+            # plt.tight_layout()
+            # pdf.savefig(fig)
+            # plt.close(fig)
 
 def plot_obs_v_sim3(subdir=".",post_iter=None):
     """plot the results for daily, monthly batch and monthly sequential
@@ -4224,21 +4261,21 @@ if __name__ == "__main__":
     num_replicates=10
     dsi_noptmax = 10
 
-    arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining=None,use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)]
+    # arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining=None,use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)]
 
-    procs = []
-    for arg_set in arg_sets:
-        p = _spawn_dsi_process(arg_set)
-        procs.append(p)
+    # procs = []
+    # for arg_set in arg_sets:
+    #     p = _spawn_dsi_process(arg_set)
+    #     procs.append(p)
 
-    for p in procs:
-        p.join()
+    #for p in procs:
+    #    p.join()
     # run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax)
