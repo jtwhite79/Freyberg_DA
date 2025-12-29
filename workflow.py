@@ -4064,12 +4064,14 @@ def plot_obs_v_sim_pub(subdir=".",post_iter=None):
     pp.close()
 
 
-def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,use_reals="all"):
+def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,use_reals="all",num_replicates=None):
     transforms = [
             {"type":"normal_score"}
             ]
     m_ds = [d for d in os.listdir(".") if os.path.isdir(d) and d.startswith('monthly_model_files_master_') and "dsi" not in d]
     m_ds.sort()
+    if num_replicates is not None:
+        m_ds = m_ds[:num_replicates]
     for m_d in m_ds:
         pst = pyemu.Pst(os.path.join(m_d,"freyberg.pst"))
         obs = pst.observation_data
@@ -4088,7 +4090,7 @@ def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,
         elif use_reals == "prior":
             oe = pst.ies.obsen0.copy()#loc[:,kobs.obsnme].copy()#get("obsen",pst.ies.phiactual.iteration.max()).loc[:,kobs.obsnme].copy()
         elif use_reals == "posterior":
-            oe = pst.ies.obsen.get("obsen",pst.ies.phiactual.iteration.max()).copy()
+            oe = pst.ies.get("obsen",pst.ies.phiactual.iteration.max()).copy()
         else:
             raise NotImplementedError()
         if use_ae:
@@ -4189,6 +4191,7 @@ def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,
                 raise NotImplementedError()
             ppst.write(os.path.join(new_t_d,"dsi.pst"),version=2)
             pyemu.os_utils.run("pestpp-ies dsi.pst /e",cwd=new_t_d)
+       
 
             
 
@@ -4199,26 +4202,26 @@ if __name__ == "__main__":
 
     #### MAIN WORKFLOW ####
     #coarse scenario
-    sync_phase(s_d = "monthly_model_files_1lyr_trnsprt_org")
-    add_new_stress(m_d_org = "monthly_model_files_1lyr_trnsprt")
-    c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=50)
-    b_d = setup_interface("monthly_model_files_1lyr_trnsprt_newstress",num_reals=50,complex_pars=True)
+    # sync_phase(s_d = "monthly_model_files_1lyr_trnsprt_org")
+    # add_new_stress(m_d_org = "monthly_model_files_1lyr_trnsprt")
+    # c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=50)
+    # b_d = setup_interface("monthly_model_files_1lyr_trnsprt_newstress",num_reals=50,complex_pars=True)
     
-    m_c_d = run_complex_prior_mc(c_d,num_workers=10)
+    # m_c_d = run_complex_prior_mc(c_d,num_workers=10)
 
-    b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
+    # b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
     
-    compare_mf6_freyberg(num_workers=20, num_replicates=50,num_reals=100,use_sim_states=True,
-                        run_ies=True,run_da=False,adj_init_states=True,noptmax=10)
+    # compare_mf6_freyberg(num_workers=20, num_replicates=50,num_reals=100,use_sim_states=True,
+    #                     run_ies=True,run_da=False,adj_init_states=True,noptmax=10)
 
-    run_dsi_monthly_dirs(pretraining="posterior")
-    run_dsi_monthly_dirs(pretraining="prior")
-    run_dsi_monthly_dirs(pretraining=None)
-
-    run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior")
-    run_dsi_monthly_dirs(pretraining="prior",use_reals="prior")
-    run_dsi_monthly_dirs(pretraining=None,use_reals="prior")
-    run_dsi_monthly_dirs(pretraining=None,use_reals="posterior")
+    # run_dsi_monthly_dirs(pretraining="posterior")
+    # run_dsi_monthly_dirs(pretraining="prior")
+    # run_dsi_monthly_dirs(pretraining=None)
+    num_replicates=10
+    run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates)
+    run_dsi_monthly_dirs(pretraining="prior",use_reals="prior",num_replicates=num_replicates)
+    run_dsi_monthly_dirs(pretraining=None,use_reals="prior",num_replicates=num_replicates)
+    run_dsi_monthly_dirs(pretraining=None,use_reals="posterior",num_replicates=num_replicates)
     
 
     # plotting
@@ -4230,7 +4233,7 @@ if __name__ == "__main__":
     
     #plot_s_vs_s_pub_2(summarize=True,subdir="missing_wel_pars")
 
-    exit()
+
 
     #other fxns
     # m_b_d, m_s_d = run_batch_seq_prior_monte_carlo(b_d, s_d)
