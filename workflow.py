@@ -3320,7 +3320,7 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                 lq = pv.quantile(0.05)
                 uq = pv.quantile(0.95)
                 ax.scatter([mn], [ireal],
-                                color="m", marker="o",alpha=0.35, s=15)
+                                color="m", marker="o",alpha=1.0, s=15)
                 ax.plot([lq, uq], [ireal,ireal],
                                 color="b", alpha=0.2, lw=2.5)
                 ax.set_title(key + "\nmeasured phi")
@@ -3356,7 +3356,7 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                 lq = pv.quantile(0.05)
                 uq = pv.quantile(0.95)
                 ax.scatter([mn], [ireal],
-                                color="m", marker="o",alpha=0.2, s=15)
+                                color="m", marker="o",alpha=1.0, s=15)
                 ax.plot([lq, uq], [ireal,ireal],
                                 color="b", alpha=0.35, lw=2.5)
                 ax.set_title(key + "\nactual phi")
@@ -3414,9 +3414,9 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                     lq = s_b_oe_pt.loc[:, oname].quantile(0.05)
                     uq = s_b_oe_pt.loc[:, oname].quantile(0.95)
                     axes[0].scatter(mn, cval,
-                                       marker="o", color="m", alpha=0.2, s=15)
+                                       marker="o", color="m", alpha=1.0, s=30)
                     axes[0].plot([lq, uq], [cval, cval],
-                                    color="b", alpha=0.35, lw=2.5)
+                                    color="b", alpha=0.2, lw=2.5)
                     t = label + " " + name + "\ntime 12\nprocess model"
                     if wval > 0:
                         t += ", weighted"
@@ -3431,9 +3431,9 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                         lq = s_b_oe_pt.loc[:, oname].quantile(0.05)
                         uq = s_b_oe_pt.loc[:, oname].quantile(0.95)
                         ax.scatter(mn, cval,
-                                           marker="o", color='b', alpha=0.5, s=3)
+                                           marker="o", color='b', alpha=1.0, s=30)
                         ax.plot([lq, uq], [cval, cval],
-                                        color='b', alpha=0.35, lw=2.5)
+                                        color='b', alpha=0.2, lw=2.5)
                         
                         t = label + " " + name + "\ntime 12\n" + key
                         if wval > 0:
@@ -3467,9 +3467,9 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                     lq = s_b_oe_pt.loc[:, oname].quantile(0.05)
                     uq = s_b_oe_pt.loc[:, oname].quantile(0.95)
                     axes[0].scatter(mn, cval,
-                                       marker="o", color="m", alpha=0.2, s=15)
+                                       marker="o", color="m", alpha=1.0, s=30)
                     axes[0].plot([lq, uq], [cval, cval],
-                                    color="b", alpha=0.35, lw=2.5)
+                                    color="b", alpha=0.2, lw=2.5)
                     axes[0].set_title(label + " " + name + "\ntime 25\nprocess model")
                     keys = list(dsi_dict)                
                     keys.sort()
@@ -3481,9 +3481,9 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                         lq = s_b_oe_pt.loc[:, oname].quantile(0.05)
                         uq = s_b_oe_pt.loc[:, oname].quantile(0.95)
                         ax.scatter(mn, cval,
-                                           marker="o", color='b', alpha=0.5, s=3)
+                                           marker="o", color='b', alpha=1.0, s=30)
                         ax.plot([lq, uq], [cval, cval],
-                                        color='b', alpha=0.35, lw=2.5)
+                                        color='b', alpha=0.2, lw=2.5)
                         ax.set_title(label + " " + name + "\ntime 25\n"+key)
             
             mn = min(ax.get_ylim()[0],ax.get_xlim()[0])
