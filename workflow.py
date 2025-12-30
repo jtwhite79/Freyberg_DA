@@ -3320,10 +3320,12 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                 lq = pv.quantile(0.05)
                 uq = pv.quantile(0.95)
                 ax.scatter([mn], [ireal],
-                                color="b", marker="o",alpha=0.35, s=10)
+                                color="m", marker="o",alpha=0.35, s=15)
                 ax.plot([lq, uq], [ireal,ireal],
-                                color="b", alpha=0.35, lw=2.5)
-                ax.set_title(key + " measured phi")
+                                color="b", alpha=0.2, lw=2.5)
+                ax.set_title(key + "\nmeasured phi")
+                ax.set_ylabel("replicate")
+                ax.set_xlabel("phi")
         mn = 1e300
         mx = -1e300
         for ax in axes:
@@ -3354,10 +3356,12 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                 lq = pv.quantile(0.05)
                 uq = pv.quantile(0.95)
                 ax.scatter([mn], [ireal],
-                                color="b", marker="o",alpha=0.35, s=10)
+                                color="m", marker="o",alpha=0.2, s=15)
                 ax.plot([lq, uq], [ireal,ireal],
                                 color="b", alpha=0.35, lw=2.5)
-                ax.set_title(key + " actual phi")
+                ax.set_title(key + "\nactual phi")
+                ax.set_ylabel("replicate")
+                ax.set_xlabel("phi")
         mn = 1e300
         mx = -1e300
         for ax in axes:
@@ -3405,14 +3409,18 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                     sbobs = s_b_pst.observation_data
                     sgobs = sbobs.loc[sbobs.obsnme.str.contains(k0ogname), :].copy()
                     cval = sgobs.loc[oname, "obsval"].copy()
+                    wval = sgobs.loc[oname, "weight"].copy()
                     mn = s_b_oe_pt.loc[:, oname].mean()
                     lq = s_b_oe_pt.loc[:, oname].quantile(0.05)
                     uq = s_b_oe_pt.loc[:, oname].quantile(0.95)
                     axes[0].scatter(mn, cval,
-                                       marker="o", color="b", alpha=0.5, s=3)
+                                       marker="o", color="m", alpha=0.2, s=15)
                     axes[0].plot([lq, uq], [cval, cval],
                                     color="b", alpha=0.35, lw=2.5)
-                    axes[0].set_title(label + " " + name + "\ntime 12\nprocess model")
+                    t = label + " " + name + "\ntime 12\nprocess model"
+                    if wval > 0:
+                        t += ", weighted"
+                    axes[0].set_title(t)
                     keys = list(dsi_dict)                
                     keys.sort()
                 
@@ -3426,6 +3434,10 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                                            marker="o", color='b', alpha=0.5, s=3)
                         ax.plot([lq, uq], [cval, cval],
                                         color='b', alpha=0.35, lw=2.5)
+                        
+                        t = label + " " + name + "\ntime 12\n" + key
+                        if wval > 0:
+                            t += ", weighted"
                         ax.set_title(label + " " + name + "\ntime 12\n"+key)
             
             mn = min(ax.get_ylim()[0],ax.get_xlim()[0])
@@ -3455,7 +3467,7 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                     lq = s_b_oe_pt.loc[:, oname].quantile(0.05)
                     uq = s_b_oe_pt.loc[:, oname].quantile(0.95)
                     axes[0].scatter(mn, cval,
-                                       marker="o", color="b", alpha=0.5, s=3)
+                                       marker="o", color="m", alpha=0.2, s=15)
                     axes[0].plot([lq, uq], [cval, cval],
                                     color="b", alpha=0.35, lw=2.5)
                     axes[0].set_title(label + " " + name + "\ntime 25\nprocess model")
@@ -4237,6 +4249,118 @@ def _spawn_dsi_process(kwargs):
     return p
 
 
+def plot_dsi_par_summary(post_iter=None):
+    include_est_states = False
+    ognames = keep.copy()
+    ognames.extend(forecast)
+    label_dict = keep_dict
+    label_dict.update(forecast_dict)
+
+    # first rip thru all the dirs and load...
+    s_b_dict = {}
+    print("loading results...")
+    m_ds = [d for d in os.listdir(".") if os.path.isdir(d) and d.startswith('monthly_model_files_master_') and "dsi" not in d]
+    m_ds.sort()
+    for s_b_m_d in m_ds:
+        pst = pyemu.Pst(os.path.join(s_b_m_d, "freyberg.pst"))
+        
+        bpost_iter = pst.ies.phiactual.iteration.max()
+        if post_iter is not None:
+            bpost_iter = post_iter
+        pt = pst.ies.get("paren",bpost_iter)
+        pr = pst.ies.paren0
+        ireal = s_b_m_d.split("_")[-1]
+        dsi_mds = [d for d in os.listdir(".") if os.path.isdir(d) and s_b_m_d+"_" in d and "dsi" in d]
+        print(dsi_mds)
+        if len(dsi_mds) == 0:
+            break
+        s_b_dict[ireal] = [pst,pr,pt]
+        
+        dsi_dict = {}
+        for dsi_md in dsi_mds:
+            if "pretrain" in dsi_md and "noise" not in dsi_md:
+                continue
+            ppst = pyemu.Pst(os.path.join(dsi_md,"dsi.pst"))
+            prefix = " ".join(dsi_md.split("_")[5:])
+            assert prefix not in dsi_dict,"{0}, {1},{2}".format(dsi_md,prefix,",".join(dsi_dict.keys()))
+            dpost_iter = ppst.ies.phiactual.iteration.max()
+            dsi_dict[prefix] = [ppst,ppst.ies.obsen0,ppst.ies.get("obsen",dpost_iter)]
+        s_b_dict[ireal].append(dsi_dict)
+        print(ireal)
+
+
+    par = pst.parameter_data.copy()
+    par = par.loc[par.partrans != "fixed"]
+    pargps = par.pargp.unique()
+    pargps.sort()
+
+    ireals = list(s_b_dict.keys())
+    ireals.sort()
+
+    with PdfPages("dsi_par_summary.pdf") as pdf:
+        for pargp in pargps:
+            if pargp == "rch_const":
+                continue
+            ppar = par.loc[par.pargp==pargp,:].copy()
+            ub = ppar.parubnd.values * 0.999
+            lb = ppar.parlbnd.values * 1.001
+            results = {}
+            results["process"] = {"prior":[],"posterior":[]}
+            for key in dsi_dict:
+                results[key] = {"prior":[],"posterior":[]}
+            for ireal in ireals:
+                pst,pr,pt,dsi_dict = s_b_dict[ireal]
+                pr_count,pt_count = 0,0
+                ppr = pr.loc[:,ppar.parnme].values.copy()
+                pr1 = ppr.copy()
+                pr1[np.logical_and(ppr<ub,ppr>lb)] = 0.0
+                pr1[np.logical_or(ppr>ub,ppr<lb)] = 1.0
+                pr_count = 100 * pr1.sum()/pr1.size
+                results["process"]["prior"].append(pr_count)
+                ppr = pt.loc[:,ppar.parnme].values.copy()
+                pr1 = ppr.copy()
+                pr1[np.logical_and(ppr<ub,ppr>lb)] = 0.0
+                pr1[np.logical_or(ppr>ub,ppr<lb)] = 1.0
+                pt_count = 100* pr1.sum()/pr1.size
+                results["process"]["posterior"].append(pt_count)
+                print(pargp,pr_count,pt_count)
+                keys = list(dsi_dict.keys())
+                keys.sort()
+                for key in keys:
+                    ppst,pr,pt = dsi_dict[key]
+                    dpr_count,dpt_count = 0,0
+                    ppr = pr.loc[:,ppar.parnme].values.copy()
+                    pr1 = ppr.copy()
+                    pr1[np.logical_and(ppr<ub,ppr>lb)] = 0.0
+                    pr1[np.logical_or(ppr>ub,ppr<lb)] = 1.0
+                    dpr_count = 100 * pr1.sum()/pr1.size
+
+                    ppr = pt.loc[:,ppar.parnme].values.copy()
+                    pr1 = ppr.copy()
+                    pr1[np.logical_and(ppr<ub,ppr>lb)] = 0.0
+                    pr1[np.logical_or(ppr>ub,ppr<lb)] = 1.0
+                    dpt_count = 100* pr1.sum()/pr1.size
+                    results[key]["prior"].append(dpr_count)
+                    results[key]["posterior"].append(dpt_count)
+
+            keys = list(results.keys())
+            keys.sort()
+            fig,axes = plt.subplots(len(keys),1,figsize=(10,10),sharex=True)
+            for key,ax in zip(keys,axes):
+                #ax.hist(np.array(results[key]["prior"]),fc="0.5",alpha=0.5,bins=20,density=True)
+                ax.hist(np.array(results[key]["posterior"]),fc="b",alpha=0.5,bins=20,density=True)
+                ax.set_title(pargp + " "+key,loc="left")
+                ax.set_yticks([])
+                ax.set_xlabel("percent at/near bounds")
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close(fig)
+
+                        
+
+        
+
+
 if __name__ == "__main__":
     #run_dsi_monthly_dirs(posterior_training=False)
     #exit()
@@ -4258,8 +4382,8 @@ if __name__ == "__main__":
     # run_dsi_monthly_dirs(pretraining="posterior")
     # run_dsi_monthly_dirs(pretraining="prior")
     # run_dsi_monthly_dirs(pretraining=None)
-    num_replicates=10
-    dsi_noptmax = 10
+    # num_replicates=50
+    # dsi_noptmax = 15
 
     # arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
     #              dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
@@ -4274,8 +4398,10 @@ if __name__ == "__main__":
     #     p = _spawn_dsi_process(arg_set)
     #     procs.append(p)
 
-    #for p in procs:
+    # for p in procs:
     #    p.join()
+
+
     # run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax)
@@ -4290,7 +4416,7 @@ if __name__ == "__main__":
     #plot_obs_v_sim3(subdir=".")
     
     plot_s_vs_s_pub_2(summarize=True)
-    
+    #plot_dsi_par_summary()
     #plot_s_vs_s_pub_2(summarize=True,subdir="missing_wel_pars")
 
 
