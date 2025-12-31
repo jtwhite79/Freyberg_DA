@@ -553,7 +553,7 @@ def test_extract_conc_state_obs(t_d):
     os.chdir(cwd)
     return fnames
 
-def setup_interface(org_ws, num_reals=10,complex_pars=True):
+def setup_interface(org_ws, num_reals=10,complex_pars=True,relax=False):
     """copied from auto_pest.py
 
     """
@@ -744,40 +744,7 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True):
                                   geostruct=grid_gs)
                 
 
-    # add direct pars for the ic strt values
-    tag = "ic_strt"
-    arr_files = [f for f in os.listdir(template_ws) if tag in f and f.endswith(".txt")]
-    for arr_file in arr_files:
-        # make sure each array file in nrow X ncol dimensions (not wrapped)
-        # arr = np.loadtxt(os.path.join(template_ws, arr_file)).reshape(ib.shape)
-        arr = np.loadtxt(os.path.join(template_ws, arr_file))
-        # np.savetxt(os.path.join(template_ws, arr_file), arr, fmt="%15.6E")
-        k = int(arr_file.split('.')[1][-1]) - 1
-        prefix = "head_k:{0}".format(k)
-        zn_arr = np.ones_like(arr, dtype=int)
-        zn_arr[arr < 0] = 0
-        zn_arr[arr > 1000] = 0
-        pf.add_parameters(arr_file, par_type="grid", par_style="direct", pargp=prefix, par_name_base=prefix,
-                          transform="none",
-                          lower_bound=-10000, upper_bound=10000, zone_array=zn_arr)
-
-        # add direct pars for the conc strt values
-    tag = "conc"
-    arr_files = [f for f in os.listdir(template_ws) if tag in f and f.endswith(".txt")]
-    for arr_file in arr_files:
-        print(arr_file)
-        # make sure each array file in nrow X ncol dimensions (not wrapped)
-        # arr = np.loadtxt(os.path.join(template_ws, arr_file)).reshape(ib.shape)
-        arr = np.loadtxt(os.path.join(template_ws, arr_file))
-        # np.savetxt(os.path.join(template_ws, arr_file), arr, fmt="%15.6E")
-        k = int(arr_file.split('.')[1][-1]) - 1
-        prefix = "conc_k:{0}".format(k)
-        # zn_arr = np.ones_like(arr, dtype=int)
-        # zn_arr[arr < 0] = 0
-        # zn_arr[arr > 1000] = 0
-        pf.add_parameters(arr_file, par_type="grid", par_style="direct", pargp=prefix, par_name_base=prefix,
-                                transform="none",
-                                lower_bound=-10000, upper_bound=10000, zone_array=zn_arr)
+    
 
     # get all the list-type files associated with the wel package
     if complex_pars:
@@ -824,13 +791,7 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True):
     strt_pars = par.loc[par.parnme.str.contains('|'.join(searchfor)), "parnme"]
 
     if complex_pars:
-        # set the first stress period to no pumping
-        first_wpar = "pname:twel_mlt_0_inst:0_ptype:cn_usecol:3_pstyle:m"
-        assert first_wpar in set(pf.pst.par_names)
-        pf.pst.parameter_data.loc[first_wpar,"partrans"] = "fixed"
-        pf.pst.parameter_data.loc[first_wpar, "parval1"] = 5.0e-10
-        pf.pst.parameter_data.loc[first_wpar, "parlbnd"] = 1.0e-10
-        pf.pst.parameter_data.loc[first_wpar, "parubnd"] = 1.0e-9
+        
 
         # fix the new stress well if present
         new_wpar = par.loc[par.parnme.apply(lambda x: "wel_grid" in x and "idx0:0" in x),"parnme"]
@@ -843,10 +804,10 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True):
             #print(new_wpar)
             #print(pf.pst.par_names)
             assert new_wpar in set(pf.pst.par_names),new_wpar
-        pf.pst.parameter_data.loc[new_wpar, "partrans"] = "fixed"
-        pf.pst.parameter_data.loc[new_wpar, "parval1"] = 1.0
-        pf.pst.parameter_data.loc[new_wpar, "parlbnd"] = 0.999999
-        pf.pst.parameter_data.loc[new_wpar, "parubnd"] = 1.000001
+            pf.pst.parameter_data.loc[new_wpar, "partrans"] = "fixed"
+            pf.pst.parameter_data.loc[new_wpar, "parval1"] = 1.0
+            pf.pst.parameter_data.loc[new_wpar, "parlbnd"] = 0.999999
+            pf.pst.parameter_data.loc[new_wpar, "parubnd"] = 1.000001
 
     # draw from the prior and save the ensemble in binary format
     pe = pf.draw(num_reals, use_specsim=True)
@@ -864,35 +825,21 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True):
 
     # ident the obs-par state linkage
     obs = pf.pst.observation_data
-    state_obs = obs.loc[obs.obsnme.str.contains("arrobs_head"), :].copy()
-    state_par = par.loc[par.parnme.str.contains('d_head'), :].copy()
-    for v in ["k", "i", "j"]:
-        state_par.loc[:, v] = state_par.loc[:, v].apply(int)
-        state_obs.loc[:, v] = state_obs.loc[:, v].apply(int)
-    state_par_dict = {"{0}_{1}_{2}".format(k, i, j): n for k, i, j, n in
-                      zip(state_par.k, state_par.i, state_par.j, state_par.parnme)}
-    obs.loc[:, "state_par_link"] = np.nan
-    state_obs.loc[:, "kij"] = state_obs.apply(lambda x: "{0}_{1}_{2}".format(x.k, x.i, x.j), axis=1)
-
-    obs.loc[state_obs.obsnme, "state_par_link"] = state_obs.apply(lambda x: state_par_dict.get((x.kij), np.nan), axis=1)
-    print(obs.state_par_link.dropna().shape)
-
-    # ident the obs-par state linkage
-    obs = pf.pst.observation_data
-    state_obs = obs.loc[obs.obsnme.str.contains("arrobs_conc"), :].copy()
-    state_par = par.loc[par.parnme.str.contains('d_conc'), :].copy()
-    for v in ["k", "i", "j"]:
-        state_par.loc[:, v] = state_par.loc[:, v].apply(int)
-        state_obs.loc[:, v] = state_obs.loc[:, v].apply(int)
-    state_par_dict = {"{0}_{1}_{2}".format(k, i, j): n for k, i, j, n in
-                      zip(state_par.k, state_par.i, state_par.j, state_par.parnme)}
-    state_obs.loc[:, "kij"] = state_obs.apply(lambda x: "{0}_{1}_{2}".format(x.k, x.i, x.j), axis=1)
-
-    obs.loc[state_obs.obsnme, "state_par_link"] = state_obs.apply(lambda x: state_par_dict.get((x.kij), np.nan), axis=1)
-    print(obs.state_par_link.dropna().shape)
+  
 
     df = pf.pst.add_pars_as_obs(pst_path=pf.new_d)
-    pf.pst.observation_data.loc[df.index,"weight"] = 0.0
+    
+    if relax:
+        org_par = pf.pst.parameter_data.copy()
+        pf.pst.dialate_par_bounds(2.0)
+        obs = pf.pst.observation_data
+        obs["greater_than"] = np.nan
+        obs["less_than"] = np.nan
+        obs.loc[df.index,"greater_than"] = org_par.loc[df.index,"parlbnd"].values
+        obs.loc[df.index,"less_than"] = org_par.loc[df.index,"parubnd"].values
+
+    else:
+        pf.pst.observation_data.loc[df.index,"weight"] = 0.0
     # write the control file
     pf.pst.write(os.path.join(pf.new_d, "freyberg.pst"),version=2)
 
@@ -4367,17 +4314,17 @@ if __name__ == "__main__":
 
     #### MAIN WORKFLOW ####
     #coarse scenario
-    # sync_phase(s_d = "monthly_model_files_1lyr_trnsprt_org")
-    # add_new_stress(m_d_org = "monthly_model_files_1lyr_trnsprt")
-    # c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=50)
-    # b_d = setup_interface("monthly_model_files_1lyr_trnsprt_newstress",num_reals=50,complex_pars=True)
-    
-    # m_c_d = run_complex_prior_mc(c_d,num_workers=10)
+    sync_phase(s_d = "monthly_model_files_1lyr_trnsprt_org")
+    add_new_stress(m_d_org = "monthly_model_files_1lyr_trnsprt")
+    #c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=50)
+    b_d = setup_interface("monthly_model_files_1lyr_trnsprt_newstress",num_reals=50,complex_pars=True,relax=True)
+    exit()
+    #m_c_d = run_complex_prior_mc(c_d,num_workers=10)
 
-    # b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
+    b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
     
-    # compare_mf6_freyberg(num_workers=20, num_replicates=50,num_reals=100,use_sim_states=True,
-    #                     run_ies=True,run_da=False,adj_init_states=True,noptmax=10)
+    compare_mf6_freyberg(num_workers=20, num_replicates=50,num_reals=100,use_sim_states=True,
+                        run_ies=True,run_da=False,adj_init_states=True,noptmax=10)
 
     # run_dsi_monthly_dirs(pretraining="posterior")
     # run_dsi_monthly_dirs(pretraining="prior")
