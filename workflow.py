@@ -4316,23 +4316,22 @@ if __name__ == "__main__":
     #coarse scenario
     sync_phase(s_d = "monthly_model_files_1lyr_org")
     add_new_stress(m_d_org = "monthly_model_files_1lyr")
-    #c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=50)
-    b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=50,complex_pars=True,relax=True)
-    
+    num_replicates = 20
+    num_reals = 100
+    noptmax = 10
+    dsi_noptmax = 10
+    c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=num_replicates)
+    b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=True)
     m_c_d = run_complex_prior_mc(c_d,num_workers=10)
-
     b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
     
-    compare_mf6_freyberg(num_workers=20, num_replicates=20,num_reals=100,use_sim_states=False,
-                        run_ies=True,run_da=False,adj_init_states=True,noptmax=10)
+    compare_mf6_freyberg(num_workers=20, num_replicates=num_replicates,num_reals=num_reals,use_sim_states=False,
+                        run_ies=True,run_da=False,adj_init_states=False,noptmax=10)
 
     # run_dsi_monthly_dirs(pretraining="posterior")
     # run_dsi_monthly_dirs(pretraining="prior")
     # run_dsi_monthly_dirs(pretraining=None)
     
-    num_replicates=20
-    dsi_noptmax = 10
-
     arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
                  dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
                  dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
