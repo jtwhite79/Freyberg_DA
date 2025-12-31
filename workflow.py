@@ -1445,8 +1445,8 @@ def map_complex_to_simple_bat(c_d,b_d,real_idx):
 
 
         else:
-            obs.loc[kobs.obsnme[1:13], "standard_deviation"] = 1.0
-            obs.loc[kobs.obsnme[1:13],"weight"] = 1.0
+            obs.loc[kobs.obsnme[1:13], "standard_deviation"] = 0.1
+            obs.loc[kobs.obsnme[1:13],"weight"] = 10.0
         v = pyemu.geostats.ExpVario(contribution=1.0,a=365)
         gs = pyemu.geostats.GeoStruct(variograms=v)
         struct_dict[gs] = kobs.obsnme.iloc[1:13].to_list()
@@ -4314,39 +4314,40 @@ if __name__ == "__main__":
 
     #### MAIN WORKFLOW ####
     #coarse scenario
-    sync_phase(s_d = "monthly_model_files_1lyr_trnsprt_org")
-    add_new_stress(m_d_org = "monthly_model_files_1lyr_trnsprt")
+    sync_phase(s_d = "monthly_model_files_1lyr_org")
+    add_new_stress(m_d_org = "monthly_model_files_1lyr")
     #c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=50)
-    b_d = setup_interface("monthly_model_files_1lyr_trnsprt_newstress",num_reals=50,complex_pars=True,relax=True)
-    exit()
-    #m_c_d = run_complex_prior_mc(c_d,num_workers=10)
+    b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=50,complex_pars=True,relax=True)
+    
+    m_c_d = run_complex_prior_mc(c_d,num_workers=10)
 
     b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
     
-    compare_mf6_freyberg(num_workers=20, num_replicates=50,num_reals=100,use_sim_states=True,
+    compare_mf6_freyberg(num_workers=20, num_replicates=20,num_reals=100,use_sim_states=False,
                         run_ies=True,run_da=False,adj_init_states=True,noptmax=10)
 
     # run_dsi_monthly_dirs(pretraining="posterior")
     # run_dsi_monthly_dirs(pretraining="prior")
     # run_dsi_monthly_dirs(pretraining=None)
-    # num_replicates=50
-    # dsi_noptmax = 15
+    
+    num_replicates=20
+    dsi_noptmax = 10
 
-    # arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-    #              dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-    #              dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-    #              dict(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-    #              dict(pretraining=None,use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
-    #              dict(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
-    #              dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)]
+    arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining=None,use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)]
 
-    # procs = []
-    # for arg_set in arg_sets:
-    #     p = _spawn_dsi_process(arg_set)
-    #     procs.append(p)
+    procs = []
+    for arg_set in arg_sets:
+        p = _spawn_dsi_process(arg_set)
+        procs.append(p)
 
-    # for p in procs:
-    #    p.join()
+    for p in procs:
+       p.join()
 
 
     # run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
