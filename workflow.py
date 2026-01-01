@@ -2030,7 +2030,7 @@ def plot_s_vs_s(summarize=False, subdir=".", post_iter=None):
             plt.close(figall)
 
 def sync_phase(s_d = "monthly_model_files_org"):
-    c_d = "daily_model_files_trnsprt_org"
+    c_d = "daily_model_files_org"
 
 
     t_c_d = c_d.replace("_org","")
@@ -2069,10 +2069,10 @@ def sync_phase(s_d = "monthly_model_files_org"):
         # now doing this in setup_pst
         #wel_files[1].loc[:,"flux"] = 0.0
         for sp,df in wel_files.items():
-            df.loc[:, "aux"] = 0
+            #df.loc[:, "aux"] = 0
             # uniform base pumping otherwise
             if sp != 1:
-                df.loc[:,"flux"] = -300.0
+                df.loc[:,"flux"] = -150.0
             df.to_csv(os.path.join(d,"freyberg6.wel_stress_period_data_{0}.txt".format(sp)),index=False,header=False,sep=" ")
 
 
@@ -2188,14 +2188,14 @@ def add_new_stress(m_d_org = "monthly_model_files"):
     wel_files = [f for f in os.listdir(d_d_new) if ".wel_stress_period" in f and f.endswith(".txt")]
     for wel_file in wel_files:
         sp = int(wel_file.split(".")[1].split('_')[-1])
-        df = pd.read_csv(os.path.join(d_d_new,wel_file),header=None,names=["l","r","c","flux","aux"])#,delim_whitespace=True)
+        df = pd.read_csv(os.path.join(d_d_new,wel_file),header=None,names=["l","r","c","flux"],delim_whitespace=True)
         df.loc[6,["l","r","c"]] = [d_lrc[0],d_lrc[1],d_lrc[2]]
         if sp < d_start_sp:
             df.loc[6,"flux"] = 0.0
-            df.loc[6, "aux"] = 0.0
+            #df.loc[6, "aux"] = 0.0
         else:
             df.loc[6, "flux"] = new_flux
-            df.loc[6, "aux"] = 0.0
+            #df.loc[6, "aux"] = 0.0
         df = df.astype({"l": int, "r": int, "c": int})
         print(df.dtypes)
         df.to_csv(os.path.join(d_d_new,wel_file),header=False,index=False,sep=" ")
@@ -2219,14 +2219,14 @@ def add_new_stress(m_d_org = "monthly_model_files"):
     wel_files = [f for f in os.listdir(m_d_new) if ".wel_stress_period" in f and f.endswith(".txt")]
     for wel_file in wel_files:
         sp = int(wel_file.split(".")[1].split('_')[-1])
-        df = pd.read_csv(os.path.join(m_d_new,wel_file),header=None,names=["l","r","c","flux","aux"],delim_whitespace=True)
+        df = pd.read_csv(os.path.join(m_d_new,wel_file),header=None,names=["l","r","c","flux"],delim_whitespace=True)
         df.loc[6,["l","r","c"]] = [m_lrc[0],m_lrc[1],m_lrc[2]]
         if sp < m_start_sp:
             df.loc[6,"flux"] = 0.0
-            df.loc[6, "aux"] = 0.0
+            #df.loc[6, "aux"] = 0.0
         else:
             df.loc[6, "flux"] = new_flux
-            df.loc[6, "aux"] = 0.0
+            #df.loc[6, "aux"] = 0.0
         df = df.astype({"l": int, "r": int, "c": int})
         print(df.dtypes)
         df.to_csv(os.path.join(m_d_new,wel_file),header=False,index=False,sep=" ")
