@@ -536,22 +536,6 @@ def test_extract_HK(t_d):
     os.chdir(cwd)
     return fnames
 
-def extract_conc_state_obs():
-    ucn = flopy.utils.HeadFile('freyberg6_trns.ucn', precision="double", text="CONCENTRATION")
-    arr = ucn.get_data()
-    fnames = []
-    for k, a in enumerate(arr):
-        fname = 'conc_' + str(k) + '.dat'
-        np.savetxt(fname, a, fmt='%15.6E')
-        fnames.append(fname)
-    return fnames
-
-def test_extract_conc_state_obs(t_d):
-    cwd = os.getcwd()
-    os.chdir(t_d)
-    fnames = extract_conc_state_obs()
-    os.chdir(cwd)
-    return fnames
 
 def setup_interface(org_ws, num_reals=10,complex_pars=True,relax=False):
     """copied from auto_pest.py
@@ -607,11 +591,7 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True,relax=False):
                         use_cols=list(df.columns.values),
                         prefix="sfr")
 
-    # add observations from the sft observation output file
-    df = pd.read_csv(os.path.join(template_ws, "sft.csv"), index_col=0)
-    pf.add_observations("sft.csv", insfile="sft.csv.ins", index_cols="time",
-                        use_cols=list(df.columns.values),
-                        prefix="sft")
+    
 
     # add observations for the heads observation output file
     df = pd.read_csv(os.path.join(template_ws, "heads.csv"), index_col=0)
@@ -619,11 +599,7 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True,relax=False):
                         index_cols="time", use_cols=list(df.columns.values),
                         prefix="hds")
 
-    # add observations for the concs observation output file
-    df = pd.read_csv(os.path.join(template_ws, "concs.csv"), index_col=0)
-    pf.add_observations("concs.csv", insfile="concs.csv.ins",
-                        index_cols="time", use_cols=list(df.columns.values),
-                        prefix="cnc")
+   
 
     # add observations for the simulated K values
     #note that for the complex model, this is the avg of the 3 layers
@@ -632,30 +608,6 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True,relax=False):
     prefix = "HK_k:1"
     pf.add_observations('HK.txt', prefix=prefix, obsgp=prefix)
 
-    # add observations for simulated hds states
-    pf.add_py_function("workflow.py", "extract_hds_state_obs()", is_pre_cmd=False)
-    fnames = test_extract_hds_state_obs(template_ws)
-    for k, fname in enumerate(fnames):
-        prefix = "head_k:{0}".format(k)
-        pf.add_observations(fname, prefix=prefix, obsgp=prefix)
-
-    # add observations for simulated conc states
-    pf.add_py_function("workflow.py", "extract_conc_state_obs()", is_pre_cmd=False)
-    fnames = test_extract_conc_state_obs(template_ws)
-    for k, fname in enumerate(fnames):
-        prefix = "conc_k:{0}".format(k)
-        pf.add_observations(fname, prefix=prefix, obsgp=prefix)
-
-
-    # write a really simple instruction file to read the MODPATH end point file
-    # out_file = "freyberg6_mp_forward.mpend"
-    # ins_file = out_file + ".ins"
-    # with open(os.path.join(pst_helper.new_model_ws, ins_file), 'w') as f:
-    #     f.write("pif ~\n")
-    #     f.write("l7 w w w !part_status! w w !part_time!\n")
-    #
-    # #add observations for particle endpoints
-    # pf.add_py_function("workflow.py", "postprocess_mp7_ep_data()", is_pre_cmd=False)
 
     # the geostruct object for grid-scale parameters
     grid_v = pyemu.geostats.ExpVario(contribution=1.0, a=500)
@@ -894,18 +846,10 @@ def process_list_files():
     """process the gwf and gwt list files into a format that is actually useful....
         took this lil number from benchmark.py in zp1 to include transport list file components
     """
-    class Mf6TListBudget(flopy.utils.mflistfile.ListBudget):
-        """"""
+    
 
-        def set_budget_key(self):
-            self.budgetkey = "MASS BUDGET FOR ENTIRE MODEL"
-            return
-
-    ucn = flopy.utils.HeadFile(os.path.join("freyberg6_trns.ucn"), precision="double", text="CONCENTRATION")
     lst = flopy.utils.Mf6ListBudget("freyberg6.lst")
     fdf,cdf = lst.get_dataframes(diff=True)
-    fdf.index = ucn.times
-    cdf.index = ucn.times
     cdf.index.name = "time"
     fdf.index.name = "time"
     cdf.fillna(0.0,inplace=True)
@@ -913,17 +857,8 @@ def process_list_files():
     fdf.to_csv("inc_flow.dat",sep=" ")
     fdf.to_csv("cum_flow.dat", sep=" ")
 
-    lst = Mf6TListBudget("freyberg6_trns.lst")
-    fdf,cdf = lst.get_dataframes(diff=False)
-    cdf.index = ucn.times
-    fdf.index = ucn.times
-    cdf.index.name = "time"
-    fdf.index.name = "time"
-    cdf.fillna(0.0, inplace=True)
-    fdf.fillna(0.0, inplace=True)
-    cdf.to_csv("cum_mass.dat", sep=" ")
-    fdf.to_csv("inc_mass.dat", sep=" ")
-    return ["inc_flow.dat","cum_flow.dat","cum_mass.dat","inc_mass.dat"]
+    
+    return ["inc_flow.dat","cum_flow.dat"]
 
 def test_process_lst_file(d):
     cwd = os.getcwd()
@@ -935,9 +870,9 @@ def test_process_lst_file(d):
 def test_process_list_files(d):
     cwd = os.getcwd()
     os.chdir(d)
-    inc_flow,cum_flow,cum_mass,inc_mass = process_list_files()
+    inc_flow,cum_flow = process_list_files()
     os.chdir(cwd)
-    return inc_flow,cum_flow,cum_mass,inc_mass
+    return inc_flow,cum_flow
 
 
 def monthly_ies_to_da(org_d,include_est_states=False):
@@ -1047,7 +982,7 @@ def monthly_ies_to_da(org_d,include_est_states=False):
 
     # fix the sfr and list instruction files - only need one output time
     fname = 'sfr.csv'
-    ins_names = ["sfr.csv.ins","sft.csv.ins","cum_mass.dat.ins","cum_flow.dat.ins","inc_mass.dat.ins","inc_flow.dat.ins"]
+    ins_names = ["sfr.csv.ins","cum_flow.dat.ins","inc_flow.dat.ins"]
     # ins_names = ["sfr.csv.ins","inc.csv.ins","cum.csv.ins"]
     for ins_name in ins_names:
         pst.drop_observations(os.path.join(t_d, ins_name), '.')
@@ -1445,8 +1380,8 @@ def map_complex_to_simple_bat(c_d,b_d,real_idx):
 
 
         else:
-            obs.loc[kobs.obsnme[1:13], "standard_deviation"] = 0.1
-            obs.loc[kobs.obsnme[1:13],"weight"] = 10.0
+            obs.loc[kobs.obsnme[1:13], "standard_deviation"] = 0.5
+            obs.loc[kobs.obsnme[1:13],"weight"] = 2.0
         v = pyemu.geostats.ExpVario(contribution=1.0,a=365)
         gs = pyemu.geostats.GeoStruct(variograms=v)
         struct_dict[gs] = kobs.obsnme.iloc[1:13].to_list()
@@ -2244,7 +2179,7 @@ def add_new_stress(m_d_org = "monthly_model_files"):
     d_start_sp = m_start_sp * 30
     d_lrc = (m_lrc[0],m_lrc[1]*3,m_lrc[2]*3)
     new_flux = -550
-    d_d_org = "daily_model_files_trnsprt"
+    d_d_org = "daily_model_files"
     d_d_new = d_d_org+"_newstress"
     if os.path.exists(d_d_new):
         shutil.rmtree(d_d_new)
@@ -2253,7 +2188,7 @@ def add_new_stress(m_d_org = "monthly_model_files"):
     wel_files = [f for f in os.listdir(d_d_new) if ".wel_stress_period" in f and f.endswith(".txt")]
     for wel_file in wel_files:
         sp = int(wel_file.split(".")[1].split('_')[-1])
-        df = pd.read_csv(os.path.join(d_d_new,wel_file),header=None,names=["l","r","c","flux","aux"],delim_whitespace=True)
+        df = pd.read_csv(os.path.join(d_d_new,wel_file),header=None,names=["l","r","c","flux","aux"])#,delim_whitespace=True)
         df.loc[6,["l","r","c"]] = [d_lrc[0],d_lrc[1],d_lrc[2]]
         if sp < d_start_sp:
             df.loc[6,"flux"] = 0.0
@@ -4320,8 +4255,8 @@ if __name__ == "__main__":
     num_reals = 100
     noptmax = 10
     dsi_noptmax = 10
-    c_d = setup_interface("daily_model_files_trnsprt_newstress",num_reals=num_replicates)
-    b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=True)
+    c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
+    b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=False)
     m_c_d = run_complex_prior_mc(c_d,num_workers=10)
     b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
     
