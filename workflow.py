@@ -3196,7 +3196,7 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
             keys.sort()
             
             for key,ax in zip(keys,axes):
-                pv = phim[key].iloc[-1,:]
+                pv = np.log10(phim[key].iloc[-1,:])
 
                 mn = pv.mean()
                 lq = pv.quantile(0.05)
@@ -3211,7 +3211,7 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
         mn = 1e300
         mx = -1e300
         for ax in axes:
-            ax.axvline(x=0.0,color="k",ls="--")
+            #ax.axvline(x=0.0,color="k",ls="--")
             mn = min(mn,ax.get_xlim()[0])
             mx = max(mx,ax.get_xlim()[1])
         for ax in axes:
@@ -3232,7 +3232,7 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
             keys.sort()
             
             for key,ax in zip(keys,axes):
-                pv = phia[key].iloc[-1,:]
+                pv = np.log10(phia[key].iloc[-1,:])
 
                 mn = pv.mean()
                 lq = pv.quantile(0.05)
@@ -3247,7 +3247,7 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
         mn = 1e300
         mx = -1e300
         for ax in axes:
-            ax.axvline(x=pst.nnz_obs,color="k",ls="--")
+            ax.axvline(x=np.log10(pst.nnz_obs),color="k",ls="--")
             mn = min(mn,ax.get_xlim()[0])
             mx = max(mx,ax.get_xlim()[1])
         for ax in axes:
@@ -4249,14 +4249,14 @@ if __name__ == "__main__":
 
     #### MAIN WORKFLOW ####
     #coarse scenario
-    sync_phase(s_d = "monthly_model_files_1lyr_org")
-    add_new_stress(m_d_org = "monthly_model_files_1lyr")
+    # sync_phase(s_d = "monthly_model_files_1lyr_org")
+    # add_new_stress(m_d_org = "monthly_model_files_1lyr")
     num_replicates = 20
     num_reals = 100
     noptmax = 10
     dsi_noptmax = 10
     c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
-    b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=False)
+    b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=True)
     m_c_d = run_complex_prior_mc(c_d,num_workers=10)
     b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
     
@@ -4297,8 +4297,8 @@ if __name__ == "__main__":
     #plot_obs_v_sim_pub(subdir=".")
     #plot_obs_v_sim3(subdir=".")
     
-    plot_s_vs_s_pub_2(summarize=True)
-    #plot_dsi_par_summary()
+    #plot_s_vs_s_pub_2(summarize=True)
+    plot_dsi_par_summary()
     #plot_s_vs_s_pub_2(summarize=True,subdir="missing_wel_pars")
 
 
