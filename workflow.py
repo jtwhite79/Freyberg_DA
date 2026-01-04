@@ -3275,11 +3275,7 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
             sgobs.sort_values(by="time", inplace=True)
             fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10))
             axes.flatten()
-
-
-
-
-            fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10),sharex=True,sharey=True)
+            fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10))#,sharex=True,sharey=True)
             axes = axes.flatten()
 
             for itime, oname in enumerate(sgobs.obsnme):
@@ -3322,8 +3318,9 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                             t += ", weighted"
                         ax.set_title(label + " " + name + "\ntime 12\n"+key)
             
-            mn = min(ax.get_ylim()[0],ax.get_xlim()[0])
-            mx = max(ax.get_ylim()[1],ax.get_xlim()[1])
+            mn = min(axes[0].get_ylim()[0],axes[0].get_xlim()[0])
+            mx = max(axes[0].get_ylim()[1],axes[0].get_xlim()[1])
+            
             for ax in axes:
                 ax.plot([mn, mx], [mn, mx], "k--")
                 ax.set_xlim(mn,mx)
@@ -3334,7 +3331,7 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
             pdf.savefig(fig)
             plt.close(fig)
                 
-            fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10),sharex=True,sharey=True)
+            fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10))#,sharex=True,sharey=True)
             axes = axes.flatten()   
             for itime, oname in enumerate(sgobs.obsnme):
                 if itime != 24:
@@ -3368,8 +3365,8 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                                         color='b', alpha=0.2, lw=2.5)
                         ax.set_title(label + " " + name + "\ntime 25\n"+key)
             
-            mn = min(ax.get_ylim()[0],ax.get_xlim()[0])
-            mx = max(ax.get_ylim()[1],ax.get_xlim()[1])
+            mn = min(axes[0].get_ylim()[0],axes[0].get_xlim()[0])
+            mx = max(axes[0].get_ylim()[1],axes[0].get_xlim()[1])
             for ax in axes:
                 ax.plot([mn, mx], [mn, mx], "k--")
                 ax.set_xlim(mn,mx)
@@ -4249,24 +4246,21 @@ if __name__ == "__main__":
 
     #### MAIN WORKFLOW ####
     #coarse scenario
-    # sync_phase(s_d = "monthly_model_files_1lyr_org")
-    # add_new_stress(m_d_org = "monthly_model_files_1lyr")
-    num_replicates = 20
+    
+    num_replicates = 50
     num_reals = 100
     noptmax = 10
     dsi_noptmax = 10
-    c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
-    b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=True)
-    m_c_d = run_complex_prior_mc(c_d,num_workers=10)
+    # sync_phase(s_d = "monthly_model_files_1lyr_org")
+    # add_new_stress(m_d_org = "monthly_model_files_1lyr")
+    # c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
+    #m_c_d = run_complex_prior_mc(c_d,num_workers=10)
+
+    b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=False,relax=False)
     b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
-    
     compare_mf6_freyberg(num_workers=20, num_replicates=num_replicates,num_reals=num_reals,use_sim_states=False,
                         run_ies=True,run_da=False,adj_init_states=False,noptmax=10)
 
-    # run_dsi_monthly_dirs(pretraining="posterior")
-    # run_dsi_monthly_dirs(pretraining="prior")
-    # run_dsi_monthly_dirs(pretraining=None)
-    
     arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
                  dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
                  dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
@@ -4297,7 +4291,7 @@ if __name__ == "__main__":
     #plot_obs_v_sim_pub(subdir=".")
     #plot_obs_v_sim3(subdir=".")
     
-    #plot_s_vs_s_pub_2(summarize=True)
+    plot_s_vs_s_pub_2(summarize=True)
     plot_dsi_par_summary()
     #plot_s_vs_s_pub_2(summarize=True,subdir="missing_wel_pars")
 
