@@ -3112,6 +3112,7 @@ def plot_s_vs_s_pub(summarize=False, subdir=".", post_iter=None):
 
 def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
     import CRPS.CRPS as pscore
+    from scipy import stats
     include_est_states = False
     ognames = keep.copy()
     ognames.extend(forecast)
@@ -3280,8 +3281,12 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
         
         for key,ax in zip(keys,axes.flatten()):
             #print(key,np.array(scores[key]))
-
-            ax.hist(np.log10(np.array(scores[key])),bins=20,density=True,alpha=0.5)
+            vals = np.log10(np.array(scores[key]))
+            ax.hist(vals,bins=20,density=True,alpha=0.5)
+            kde = stats.gaussian_kde(vals)
+            x = np.linspace(vals.min(),vals.max(),200)
+            y = kde(x)
+            ax.plot(x,y,"b-",alpha=0.5)
             ax.set_title(key,loc="left")
             ax.set_xlabel("actual phi crps")
             ax.set_yticks([])
@@ -3389,8 +3394,12 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
             bins = np.linspace(vals.min(),vals.max(),20)
             for key,ax in zip(ckeys,axes.flatten()):
                 #print(key,np.array(scores[key]))
-
-                ax.hist(np.log10(np.array(scores[key])),bins=bins,density=True,alpha=0.5)
+                vals = np.log10(np.array(scores[key]))
+                ax.hist(vals,bins=bins,density=True,alpha=0.5)
+                kde = stats.gaussian_kde(vals)
+                x = np.linspace(vals.min(),vals.max(),200)
+                y = kde(x)
+                ax.plot(x,y,"b-",alpha=0.5)
                 ax.set_title(key.replace("\n"," "),loc="left")
                 ax.set_xlabel("crps")
                 ax.set_yticks([])
@@ -3474,7 +3483,12 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
             for key,ax in zip(ckeys,axes.flatten()):
                 #print(key,np.array(scores[key]))
 
-                ax.hist(np.log10(np.array(scores[key])),bins=bins,density=True,alpha=0.5)
+                vals = np.log10(np.array(scores[key]))
+                ax.hist(vals,bins=bins,density=True,alpha=0.5)
+                kde = stats.gaussian_kde(vals)
+                x = np.linspace(vals.min(),vals.max(),200)
+                y = kde(x)
+                ax.plot(x,y,"b-",alpha=0.5)
                 ax.set_title(key.replace("\n"," "),loc="left")
                 ax.set_xlabel("crps")
                 ax.set_yticks([])
@@ -4386,7 +4400,7 @@ if __name__ == "__main__":
     #    p.join()
 
 
-    # run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
+    #run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
@@ -4399,8 +4413,8 @@ if __name__ == "__main__":
     #plot_obs_v_sim_pub(subdir=".")
     #plot_obs_v_sim3(subdir=".")
     
-    #plot_s_vs_s_pub_2(summarize=True)
-    plot_dsi_par_summary()
+    plot_s_vs_s_pub_2(summarize=True)
+    #plot_dsi_par_summary()
     #plot_s_vs_s_pub_2(summarize=True,subdir="missing_wel_pars")
 
 
