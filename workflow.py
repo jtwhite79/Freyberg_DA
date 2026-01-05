@@ -3111,6 +3111,7 @@ def plot_s_vs_s_pub(summarize=False, subdir=".", post_iter=None):
 
 
 def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
+    import CRPS.CRPS as pscore
     include_est_states = False
     ognames = keep.copy()
     ognames.extend(forecast)
@@ -3187,6 +3188,7 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
     names = ["sw_1","gw_1",
              "gw forecast","headwater forecast\n   "]
     with PdfPages(pname) as pdf:
+        
         fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10))
         axes = axes.flatten()
         for ireal in ireals:
@@ -3221,6 +3223,8 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
         plt.tight_layout()
         pdf.savefig()
         plt.close(fig)
+
+
 
 
         fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10))
@@ -3258,7 +3262,36 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
         pdf.savefig()
         plt.close(fig)
 
+        fig,axes = plt.subplots(len(keys),1,figsize=(10,10),sharex=True)
+        scores = {}
+        for ireal in ireals:
+            phia = phia_dict[ireal]
+            keys = list(phim.keys())
+            keys.sort()
+            for key in keys:
+                pv = phia[key].iloc[-1,:].dropna().values
+                #print(pv)
+                score = pscore(pv,pst.nnz_obs).compute()[-1]
+                #print(score)
+                if key not in scores:
+                    scores[key] = []
+
+                scores[key].append(score)
         
+        for key,ax in zip(keys,axes.flatten()):
+            #print(key,np.array(scores[key]))
+
+            ax.hist(np.log10(np.array(scores[key])),bins=20,density=True,alpha=0.5)
+            ax.set_title(key,loc="left")
+            ax.set_xlabel("actual phi crps")
+            ax.set_yticks([])
+        #plt.show()
+        
+        plt.tight_layout()
+        pdf.savefig()
+        plt.close(fig)
+        
+
 
         for ikeep, (label,ogname,name) in enumerate(zip(labels,sites,names)):
             # if "mass" not in ogname:
@@ -3275,17 +3308,14 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
             sgobs.sort_values(by="time", inplace=True)
             fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10))
             axes.flatten()
-
-
-
-
-            fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10),sharex=True,sharey=True)
+            fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10))#,sharex=True,sharey=True)
             axes = axes.flatten()
 
             for itime, oname in enumerate(sgobs.obsnme):
                 if itime != 12:
                     continue
                 print(itime, oname)
+                scores = {}
                 for ireal in ireals:
                     s_b_pst, s_b_oe_pr, s_b_oe_pt,dsi_dict = s_b_dict[ireal]
                     sbobs = s_b_pst.observation_data
@@ -3303,9 +3333,16 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                     if wval > 0:
                         t += ", weighted"
                     axes[0].set_title(t)
+                    score = pscore(s_b_oe_pt.loc[:, oname].values,cval).compute()[-1]
+                    #print(score)
+                    if t not in scores:
+                        scores[t] = []
+
+                    scores[t].append(score)
+
                     keys = list(dsi_dict)                
                     keys.sort()
-                
+                    
                     for key,ax in zip(keys,axes[1:]):
                
                         s_b_oe_pt = dsi_dict[key][-1]
@@ -3320,10 +3357,18 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                         t = label + " " + name + "\ntime 12\n" + key
                         if wval > 0:
                             t += ", weighted"
-                        ax.set_title(label + " " + name + "\ntime 12\n"+key)
+                        title = label + " " + name + "\ntime 12\n"+key
+                        ax.set_title(title)
+                        score = pscore(s_b_oe_pt.loc[:, oname].values,cval).compute()[-1]
+                        #print(score)
+                        if title not in scores:
+                            scores[title] = []
+
+                        scores[title].append(score)
             
-            mn = min(ax.get_ylim()[0],ax.get_xlim()[0])
-            mx = max(ax.get_ylim()[1],ax.get_xlim()[1])
+            mn = min(axes[0].get_ylim()[0],axes[0].get_xlim()[0])
+            mx = max(axes[0].get_ylim()[1],axes[0].get_xlim()[1])
+            
             for ax in axes:
                 ax.plot([mn, mx], [mn, mx], "k--")
                 ax.set_xlim(mn,mx)
@@ -3333,13 +3378,35 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
             plt.tight_layout()
             pdf.savefig(fig)
             plt.close(fig)
+            
+            ckeys = list(scores.keys())
+            ckeys.sort()
+            fig,axes = plt.subplots(len(ckeys),1,figsize=(10,10),sharex=True)
+            pkey = [k for k in ckeys if "process" in k]
+            assert len(pkey) == 1
+            vals = np.log10(np.array(scores[pkey[0]]))
+            bins = np.linspace(vals.min(),vals.max(),20)
+            for key,ax in zip(ckeys,axes.flatten()):
+                #print(key,np.array(scores[key]))
+
+                ax.hist(np.log10(np.array(scores[key])),bins=bins,density=True,alpha=0.5)
+                ax.set_title(key.replace("\n"," "),loc="left")
+                ax.set_xlabel("crps")
+                ax.set_yticks([])
+            #plt.show()
+            
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close(fig)
+
                 
-            fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10),sharex=True,sharey=True)
+            fig,axes = plt.subplots(num_ax_row,num_ax_col,figsize=(10,10))#,sharex=True,sharey=True)
             axes = axes.flatten()   
             for itime, oname in enumerate(sgobs.obsnme):
                 if itime != 24:
                     continue
                 print(itime, oname)
+                scores = {}
                 for ireal in ireals:
                     s_b_pst, s_b_oe_pr, s_b_oe_pt,dsi_dict = s_b_dict[ireal]
                     sbobs = s_b_pst.observation_data
@@ -3352,7 +3419,16 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                                        marker="o", color="m", alpha=1.0, s=30)
                     axes[0].plot([lq, uq], [cval, cval],
                                     color="b", alpha=0.2, lw=2.5)
-                    axes[0].set_title(label + " " + name + "\ntime 25\nprocess model")
+                    t = label + " " + name + "\ntime 25\nprocess model"
+                    axes[0].set_title(t)
+
+                    score = pscore(s_b_oe_pt.loc[:, oname].values,cval).compute()[-1]
+                    #print(score)
+                    if t not in scores:
+                        scores[t] = []
+
+                    scores[t].append(score)
+
                     keys = list(dsi_dict)                
                     keys.sort()
                 
@@ -3366,10 +3442,17 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                                            marker="o", color='b', alpha=1.0, s=30)
                         ax.plot([lq, uq], [cval, cval],
                                         color='b', alpha=0.2, lw=2.5)
-                        ax.set_title(label + " " + name + "\ntime 25\n"+key)
+                        title = label + " " + name + "\ntime 25\n"+key
+                        ax.set_title(title)
+                        score = pscore(s_b_oe_pt.loc[:, oname].values,cval).compute()[-1]
+                        #print(score)
+                        if title not in scores:
+                            scores[title] = []
+
+                        scores[title].append(score)
             
-            mn = min(ax.get_ylim()[0],ax.get_xlim()[0])
-            mx = max(ax.get_ylim()[1],ax.get_xlim()[1])
+            mn = min(axes[0].get_ylim()[0],axes[0].get_xlim()[0])
+            mx = max(axes[0].get_ylim()[1],axes[0].get_xlim()[1])
             for ax in axes:
                 ax.plot([mn, mx], [mn, mx], "k--")
                 ax.set_xlim(mn,mx)
@@ -3379,6 +3462,27 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
             plt.tight_layout()
             pdf.savefig(fig)
             plt.close(fig)
+
+            ckeys = list(scores.keys())
+            ckeys.sort()
+            fig,axes = plt.subplots(len(ckeys),1,figsize=(10,10),sharex=True)
+            pkey = [k for k in ckeys if "process" in k]
+            assert len(pkey) == 1
+            vals = np.log10(np.array(scores[pkey[0]]))
+            bins = np.linspace(vals.min(),vals.max(),20)
+            for key,ax in zip(ckeys,axes.flatten()):
+                #print(key,np.array(scores[key]))
+
+                ax.hist(np.log10(np.array(scores[key])),bins=bins,density=True,alpha=0.5)
+                ax.set_title(key.replace("\n"," "),loc="left")
+                ax.set_xlabel("crps")
+                ax.set_yticks([])
+            #plt.show()
+            
+            plt.tight_layout()
+            pdf.savefig()
+            plt.close(fig)
+
 
             # mn = 1.0e+10
             # mx = -12.0e+10
@@ -4251,37 +4355,33 @@ if __name__ == "__main__":
     #coarse scenario
     # sync_phase(s_d = "monthly_model_files_1lyr_org")
     # add_new_stress(m_d_org = "monthly_model_files_1lyr")
-    num_replicates = 20
-    num_reals = 100
-    noptmax = 10
-    dsi_noptmax = 10
-    c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
-    b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=True)
-    m_c_d = run_complex_prior_mc(c_d,num_workers=10)
-    b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
+    # num_replicates = 50
+    # num_reals = 100
+    # noptmax = 10
+    # dsi_noptmax = 10
+    # c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
+    # b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=False)
+    # m_c_d = run_complex_prior_mc(c_d,num_workers=10)
+    # b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
     
-    compare_mf6_freyberg(num_workers=20, num_replicates=num_replicates,num_reals=num_reals,use_sim_states=False,
-                        run_ies=True,run_da=False,adj_init_states=False,noptmax=10)
+    # compare_mf6_freyberg(num_workers=20, num_replicates=num_replicates,num_reals=num_reals,use_sim_states=False,
+    #                     run_ies=True,run_da=False,adj_init_states=False,noptmax=10)
 
-    # run_dsi_monthly_dirs(pretraining="posterior")
-    # run_dsi_monthly_dirs(pretraining="prior")
-    # run_dsi_monthly_dirs(pretraining=None)
-    
-    arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining=None,use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)]
+    # arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining=None,use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)]
 
-    procs = []
-    for arg_set in arg_sets:
-        p = _spawn_dsi_process(arg_set)
-        procs.append(p)
+    # procs = []
+    # for arg_set in arg_sets:
+    #     p = _spawn_dsi_process(arg_set)
+    #     procs.append(p)
 
-    for p in procs:
-       p.join()
+    # for p in procs:
+    #    p.join()
 
 
     # run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
@@ -4297,8 +4397,8 @@ if __name__ == "__main__":
     #plot_obs_v_sim_pub(subdir=".")
     #plot_obs_v_sim3(subdir=".")
     
-    #plot_s_vs_s_pub_2(summarize=True)
-    plot_dsi_par_summary()
+    plot_s_vs_s_pub_2(summarize=True)
+    #plot_dsi_par_summary()
     #plot_s_vs_s_pub_2(summarize=True,subdir="missing_wel_pars")
 
 
