@@ -3369,6 +3369,7 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
             mn = min(axes[0].get_ylim()[0],axes[0].get_xlim()[0])
             mx = max(axes[0].get_ylim()[1],axes[0].get_xlim()[1])
             
+            
             for ax in axes:
                 ax.plot([mn, mx], [mn, mx], "k--")
                 ax.set_xlim(mn,mx)
@@ -4353,6 +4354,7 @@ if __name__ == "__main__":
 
     #### MAIN WORKFLOW ####
     #coarse scenario
+
     # sync_phase(s_d = "monthly_model_files_1lyr_org")
     # add_new_stress(m_d_org = "monthly_model_files_1lyr")
     # num_replicates = 50
@@ -4397,8 +4399,8 @@ if __name__ == "__main__":
     #plot_obs_v_sim_pub(subdir=".")
     #plot_obs_v_sim3(subdir=".")
     
-    plot_s_vs_s_pub_2(summarize=True)
-    #plot_dsi_par_summary()
+    #plot_s_vs_s_pub_2(summarize=True)
+    plot_dsi_par_summary()
     #plot_s_vs_s_pub_2(summarize=True,subdir="missing_wel_pars")
 
 
