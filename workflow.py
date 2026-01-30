@@ -570,7 +570,7 @@ def setup_interface(org_ws, num_reals=10,complex_pars=True,relax=False):
 
     file_names = test_process_list_files(template_ws)
     for file_name in file_names:
-        df = pd.read_csv(os.path.join(template_ws,file_name),index_col=0,delim_whitespace=True)
+        df = pd.read_csv(os.path.join(template_ws,file_name),index_col=0,sep="\s+")
         names = df.columns.tolist()
         pf.add_observations(file_name, index_cols=["time"], use_cols=names, ofile_skip=0,
                             obsgp=file_name.split(".")[0],
@@ -2042,6 +2042,9 @@ def sync_phase(s_d = "monthly_model_files_org"):
     if os.path.exists(t_s_d):
         shutil.rmtree(t_s_d)
     shutil.copytree(s_d, t_s_d)
+    for f in os.listdir(bin_path):
+        shutil.copy2(os.path.join(bin_path,f),os.path.join(t_s_d,f))
+        shutil.copy2(os.path.join(bin_path,f),os.path.join(t_c_d,f))
 
     for d in [t_c_d,t_s_d]:
         rch_file_list = [f for f in os.listdir(d) if "rch_recharge" in f]
@@ -2188,7 +2191,7 @@ def add_new_stress(m_d_org = "monthly_model_files"):
     wel_files = [f for f in os.listdir(d_d_new) if ".wel_stress_period" in f and f.endswith(".txt")]
     for wel_file in wel_files:
         sp = int(wel_file.split(".")[1].split('_')[-1])
-        df = pd.read_csv(os.path.join(d_d_new,wel_file),header=None,names=["l","r","c","flux"],delim_whitespace=True)
+        df = pd.read_csv(os.path.join(d_d_new,wel_file),header=None,names=["l","r","c","flux"],sep="\s+")
         df.loc[6,["l","r","c"]] = [d_lrc[0],d_lrc[1],d_lrc[2]]
         if sp < d_start_sp:
             df.loc[6,"flux"] = 0.0
@@ -2219,7 +2222,7 @@ def add_new_stress(m_d_org = "monthly_model_files"):
     wel_files = [f for f in os.listdir(m_d_new) if ".wel_stress_period" in f and f.endswith(".txt")]
     for wel_file in wel_files:
         sp = int(wel_file.split(".")[1].split('_')[-1])
-        df = pd.read_csv(os.path.join(m_d_new,wel_file),header=None,names=["l","r","c","flux"],delim_whitespace=True)
+        df = pd.read_csv(os.path.join(m_d_new,wel_file),header=None,names=["l","r","c","flux"],sep="\s+")
         df.loc[6,["l","r","c"]] = [m_lrc[0],m_lrc[1],m_lrc[2]]
         if sp < m_start_sp:
             df.loc[6,"flux"] = 0.0
@@ -2258,7 +2261,7 @@ def make_muted_recharge(s_d = 'monthly_model_files_1lyr_org',c_d = 'daily_model_
     rch_files = [f for f in os.listdir(c_d) if ".rch_recharge" in f and f.endswith(".txt")]
     for rch_file in rch_files:
         day = int(rch_file.split(".")[1].split('_')[-1])
-        df = pd.read_csv(os.path.join(c_d,rch_file),header=None,delim_whitespace=True)
+        df = pd.read_csv(os.path.join(c_d,rch_file),header=None,sep="\s+")
         rch.loc[m,'rch'] = df.iloc[0,0]
         rch.loc[m, 'simday'] = sdts_cmplx[day - 1]
         m+=1
@@ -2291,7 +2294,7 @@ def make_muted_recharge(s_d = 'monthly_model_files_1lyr_org',c_d = 'daily_model_
     rch_files = [f for f in os.listdir(s_d) if ".rch_recharge" in f and f.endswith(".txt")]
     for rch_file in rch_files:
         sp = int(rch_file.split(".")[1].split('_')[-1])
-        df = pd.read_csv(os.path.join(s_d,rch_file),header=None,delim_whitespace=True)
+        df = pd.read_csv(os.path.join(s_d,rch_file),header=None,sep="\s+")
         for row in range(40):
             for col in range(20):
                 df[row,col] = rch_df.iloc[sp-1]
@@ -4388,21 +4391,21 @@ if __name__ == "__main__":
     #### MAIN WORKFLOW ####
     #coarse scenario
 
-    # sync_phase(s_d = "monthly_model_files_1lyr_org")
-    # add_new_stress(m_d_org = "monthly_model_files_1lyr")
-    # num_replicates = 50
-    # num_reals = 100
-    # noptmax = 10
+    sync_phase(s_d = "monthly_model_files_1lyr_org")
+    add_new_stress(m_d_org = "monthly_model_files_1lyr")
+    num_replicates = 50
+    num_reals = 100
+    noptmax = 10
     
     dsi_noptmax = 10
     
-    # c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
-    # b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=False)
-    # m_c_d = run_complex_prior_mc(c_d,num_workers=10)
-    # b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
+    c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
+    b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=False)
+    m_c_d = run_complex_prior_mc(c_d,num_workers=10)
+    b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
     
-    # compare_mf6_freyberg(num_workers=20, num_replicates=num_replicates,num_reals=num_reals,use_sim_states=False,
-    #                     run_ies=True,run_da=False,adj_init_states=False,noptmax=10)
+    compare_mf6_freyberg(num_workers=20, num_replicates=num_replicates,num_reals=num_reals,use_sim_states=False,
+                        run_ies=True,run_da=False,adj_init_states=False,noptmax=10)
 
     arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
                  dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
@@ -4412,16 +4415,16 @@ if __name__ == "__main__":
                  dict(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
                  dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)]
 
-    # procs = []
-    # for arg_set in arg_sets:
-    #     p = _spawn_dsi_process(arg_set)
-    #     procs.append(p)
+    procs = []
+    for arg_set in arg_sets:
+        p = _spawn_dsi_process(arg_set)
+        procs.append(p)
 
-    # for p in procs:
-    #    p.join()
+    for p in procs:
+       p.join()
 
 
-    run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
+    #run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
@@ -4434,7 +4437,7 @@ if __name__ == "__main__":
     #plot_obs_v_sim_pub(subdir=".")
     #plot_obs_v_sim3(subdir=".")
     
-    #plot_s_vs_s_pub_2(summarize=True)
+    plot_s_vs_s_pub_2(summarize=True)
     #plot_dsi_par_summary()
     #plot_s_vs_s_pub_2(summarize=True,subdir="missing_wel_pars")
 
