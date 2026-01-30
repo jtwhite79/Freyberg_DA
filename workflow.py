@@ -3327,6 +3327,15 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                     sgobs = sbobs.loc[sbobs.obsnme.str.contains(k0ogname), :].copy()
                     cval = sgobs.loc[oname, "obsval"].copy()
                     wval = sgobs.loc[oname, "weight"].copy()
+                    
+                    mn = s_b_oe_pr.loc[:, oname].mean()
+                    lq = s_b_oe_pr.loc[:, oname].quantile(0.05)
+                    uq = s_b_oe_pr.loc[:, oname].quantile(0.95)
+                    axes[0].scatter(mn, cval,
+                                       marker="o", color="0.5", alpha=1.0, s=30)
+                    axes[0].plot([lq, uq], [cval, cval],
+                                    color="0.5", alpha=0.2, lw=2.5)
+
                     mn = s_b_oe_pt.loc[:, oname].mean()
                     lq = s_b_oe_pt.loc[:, oname].quantile(0.05)
                     uq = s_b_oe_pt.loc[:, oname].quantile(0.95)
@@ -3422,6 +3431,15 @@ def plot_s_vs_s_pub_2(summarize=False, subdir=".", post_iter=None):
                     sbobs = s_b_pst.observation_data
                     sgobs = sbobs.loc[sbobs.obsnme.str.contains(k0ogname), :].copy()
                     cval = sgobs.loc[oname, "obsval"].copy()
+                    
+                    mn = s_b_oe_pr.loc[:, oname].mean()
+                    lq = s_b_oe_pr.loc[:, oname].quantile(0.05)
+                    uq = s_b_oe_pr.loc[:, oname].quantile(0.95)
+                    axes[0].scatter(mn, cval,
+                                       marker="o", color="0.5", alpha=1.0, s=30)
+                    axes[0].plot([lq, uq], [cval, cval],
+                                    color="0.5", alpha=0.2, lw=2.5)
+
                     mn = s_b_oe_pt.loc[:, oname].mean()
                     lq = s_b_oe_pt.loc[:, oname].quantile(0.05)
                     uq = s_b_oe_pt.loc[:, oname].quantile(0.95)
@@ -4116,9 +4134,10 @@ def plot_obs_v_sim_pub(subdir=".",post_iter=None):
 
 
 def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,use_reals="all",num_replicates=None):
-    transforms = [
-            {"type":"normal_score"}
-            ]
+    # transforms = [
+    #         {"type":"normal_score"}
+    #         ]
+    transforms = []
     m_ds = [d for d in os.listdir(".") if os.path.isdir(d) and d.startswith('monthly_model_files_master_') and "dsi" not in d]
     m_ds.sort()
     if num_replicates is not None:
@@ -4374,7 +4393,9 @@ if __name__ == "__main__":
     # num_replicates = 50
     # num_reals = 100
     # noptmax = 10
-    # dsi_noptmax = 10
+    
+    dsi_noptmax = 10
+    
     # c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
     # b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=False)
     # m_c_d = run_complex_prior_mc(c_d,num_workers=10)
@@ -4383,13 +4404,13 @@ if __name__ == "__main__":
     # compare_mf6_freyberg(num_workers=20, num_replicates=num_replicates,num_reals=num_reals,use_sim_states=False,
     #                     run_ies=True,run_da=False,adj_init_states=False,noptmax=10)
 
-    # arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-    #              dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-    #              dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-    #              dict(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-    #              dict(pretraining=None,use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
-    #              dict(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
-    #              dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)]
+    arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining=None,use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
+                 dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)]
 
     # procs = []
     # for arg_set in arg_sets:
@@ -4400,7 +4421,7 @@ if __name__ == "__main__":
     #    p.join()
 
 
-    #run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
+    run_dsi_monthly_dirs(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax)
     # run_dsi_monthly_dirs(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax)
@@ -4413,7 +4434,7 @@ if __name__ == "__main__":
     #plot_obs_v_sim_pub(subdir=".")
     #plot_obs_v_sim3(subdir=".")
     
-    plot_s_vs_s_pub_2(summarize=True)
+    #plot_s_vs_s_pub_2(summarize=True)
     #plot_dsi_par_summary()
     #plot_s_vs_s_pub_2(summarize=True,subdir="missing_wel_pars")
 
