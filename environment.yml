@@ -7,7 +7,7 @@ dependencies:
   - python = 3.11
   - libopenblas < 0.3.30
   - numpy
-  - pandas
+  - pandas < 3.0
   # optional
   - matplotlib
   - pyshp

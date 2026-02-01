@@ -4137,16 +4137,19 @@ def plot_obs_v_sim_pub(subdir=".",post_iter=None):
 
 
 def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,use_reals="all",num_replicates=None):
-    # transforms = [
-    #         {"type":"normal_score"}
-    #         ]
-    transforms = []
+    
     m_ds = [d for d in os.listdir(".") if os.path.isdir(d) and d.startswith('monthly_model_files_master_') and "dsi" not in d]
     m_ds.sort()
     if num_replicates is not None:
         m_ds = m_ds[:num_replicates]
     for m_d in m_ds:
         pst = pyemu.Pst(os.path.join(m_d,"freyberg.pst"))
+        # transforms = [
+        #         {"type":"normal_score"}
+        #         ]
+        par = pst.parameter_data
+        logpar = par.loc[par.partrans=="log","parnme"].tolist()
+        transforms = [{"type":"log10","columns":logpar}]
         obs = pst.observation_data
         keeps = [obs.loc[obs.weight>0,:].copy()]
         for f in forecast:
@@ -4391,21 +4394,22 @@ if __name__ == "__main__":
     #### MAIN WORKFLOW ####
     #coarse scenario
 
-    sync_phase(s_d = "monthly_model_files_1lyr_org")
-    add_new_stress(m_d_org = "monthly_model_files_1lyr")
+    
     num_replicates = 50
     num_reals = 100
     noptmax = 10
     
     dsi_noptmax = 10
     
-    c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
-    b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=False)
-    m_c_d = run_complex_prior_mc(c_d,num_workers=10)
-    b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
+    # sync_phase(s_d = "monthly_model_files_1lyr_org")
+    # add_new_stress(m_d_org = "monthly_model_files_1lyr")
+    # c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
+    # b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=False)
+    # m_c_d = run_complex_prior_mc(c_d,num_workers=10)
+    # b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
     
-    compare_mf6_freyberg(num_workers=20, num_replicates=num_replicates,num_reals=num_reals,use_sim_states=False,
-                        run_ies=True,run_da=False,adj_init_states=False,noptmax=10)
+    # compare_mf6_freyberg(num_workers=20, num_replicates=num_replicates,num_reals=num_reals,use_sim_states=False,
+    #                     run_ies=True,run_da=False,adj_init_states=False,noptmax=10)
 
     arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
                  dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),

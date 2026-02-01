@@ -35,7 +35,7 @@ def setup_pilotpoints_grid(
     use_ibound_zones=False,
     pp_dir=".",
     tpl_dir=".",
-    shapename="pp.shp",
+    shapename=None,
     pp_filename_dict={},
 ):
     """setup a regularly-spaced (gridded) pilot point parameterization

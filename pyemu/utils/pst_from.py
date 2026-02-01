@@ -3052,7 +3052,7 @@ class PstFrom(object):
             assert use_pp_zones is not None, "If pp_locs is not use_pp_zones should be bool."
             assert spatial_reference is not None, "If pp_locs is not spatial_reference should be passed."
             # define a shape file -- incidental
-            shp_fname = str(self.new_d / "{0}.shp".format(pp_filename))
+            shp_fname = None#str(self.new_d / "{0}.shp".format(pp_filename))
             # Set up pilot points
             pp_dict = {0: pp_basename}
             pp_filename_dict = {pp_basename: pp_filename}
