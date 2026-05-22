@@ -1,10 +1,12 @@
 from __future__ import print_function, division
 import os
 import glob
+import shlex
 import re
 import copy
 import shutil
 import time
+import string
 import warnings
 import numpy as np
 import pandas as pd
@@ -1174,7 +1176,7 @@ class Pst(object):
                         )
                     template_files, input_files = [], []
                     for i in range(self.control_data.ntplfle):
-                        raw = section_lines[i].strip().split()
+                        raw = shlex.split(section_lines[i].strip(),posix=False)
                         template_files.append(raw[0])
                         input_files.append(raw[1])
                     self.model_input_data = pd.DataFrame(
@@ -1184,7 +1186,7 @@ class Pst(object):
 
                     instruction_files, output_files = [], []
                     for j in range(self.control_data.ninsfle):
-                        raw = section_lines[i + j + 1].strip().split()
+                        raw = shlex.split(section_lines[i + j + 1].strip(),posix=False)
                         instruction_files.append(raw[0])
                         output_files.append(raw[1])
                     self.model_output_data = pd.DataFrame(
@@ -1208,7 +1210,7 @@ class Pst(object):
                     else:
                         template_files, input_files = [], []
                         for line in section_lines:
-                            raw = line.split()
+                            raw = shlex.split(line,posix=False)
                             template_files.append(raw[0])
                             input_files.append(raw[1])
                         self.model_input_data = pd.DataFrame(
@@ -1232,7 +1234,7 @@ class Pst(object):
                     else:
                         instruction_files, output_files = [], []
                         for iline, line in enumerate(section_lines):
-                            raw = line.split()
+                            raw = shlex.split(line,posix=False)
                             instruction_files.append(raw[0])
                             output_files.append(raw[1])
                         self.model_output_data = pd.DataFrame(
@@ -2025,11 +2027,25 @@ class Pst(object):
         for tplfle, infle in zip(
             self.model_input_data.pest_file, self.model_input_data.model_file
         ):
-            f_out.write("{0} {1}\n".format(tplfle, infle))
+            tplfle = str(tplfle).replace("\'",'').replace("\"",'')
+            infle = str(infle).replace("\'", '').replace("\"", '')
+            q = ' '
+            if True in [c in tplfle for c in string.whitespace] or\
+               True in [c in infle for c in string.whitespace]:
+                 q = "\"" 
+
+            f_out.write("{2}{0}{2} {2}{1}{2}\n".format(tplfle, infle, q))
         for insfle, outfle in zip(
             self.model_output_data.pest_file, self.model_output_data.model_file
         ):
-            f_out.write("{0} {1}\n".format(insfle, outfle))
+            insfle = str(insfle).replace("\'", '').replace("\"", '')
+            outfle = str(outfle).replace("\'", '').replace("\"", '')
+            q = ' '
+            if True in [c in insfle for c in string.whitespace] or\
+               True in [c in outfle for c in string.whitespace]:
+                 q = "\"" 
+
+            f_out.write("{2}{0}{2} {2}{1}{2}\n".format(insfle, outfle, q))
 
         if self.nprior > 0:
             name = "pi_data"
@@ -3882,7 +3898,8 @@ class Pst(object):
                 unique_keys = meta_dict.columns.difference(fieldnames)
                 df[unique_keys] = meta_dict[unique_keys]
             except Exception as e:
-                print("error parsing metadata from '{0}', continuing".format(name))
+                #print("error parsing metadata from '{0}', continuing".format(name))
+                pass
 
     def rename_parameters(self, name_dict, pst_path=".", tplmap=None):
         """rename parameters in the control and template files
@@ -4032,6 +4049,21 @@ class Pst(object):
         obs.loc[df.obsnme,"weight"] = 1.0 / stdev.values 
         obs.loc[df.obsnme,"obgnme"] = name_prefix+"parbounds"
         return df
+
+
+    def add_parbnd_center(self):
+        """add the `bnd_center` and `bnd_center_trans` columns to parameter data, which is a vector
+        marking the mid-point between the bounds.
+
+        """
+
+        self.add_transform_columns()
+        par = self.parameter_data
+        log_idx = par.partrans == "log"
+        par["bnd_center_trans"] = par.parlbnd_trans + ((par.parubnd_trans - par.parlbnd_trans) / 2.0)
+        par["bnd_center"] = par["bnd_center_trans"]
+        par.loc[log_idx,"bnd_center"] = 10**(par.loc[log_idx,"bnd_center"])
+        self.parameter_data = par
         
 
     def dialate_par_bounds(self,dialate_factor,center=True):
@@ -4052,23 +4084,23 @@ class Pst(object):
                 temp[name] = dialate_factor
             dialate_factor = temp
             temp = None
-        self.add_transform_columns()
 
+        self.add_parbnd_center()
         par = self.parameter_data
         par['dialate_factor'] = [dialate_factor.get(name,1.0) for name in par.parnme.values]
+        
         log_idx = par.partrans == "log"
-        par["bnd_center"] = par.parlbnd_trans + ((par.parubnd_trans - par.parlbnd_trans) / 2.0)
         if center:
-            par["center_point"] = par["bnd_center"] 
+            par["center_point"] = par["bnd_center_trans"] 
         else:
             par["center_point"] = par.parval1_trans.copy()
         
         par["parubnd_org"] = par.parubnd.copy()
-        par["ubdist"] = par.parubnd_trans - par.bnd_center
+        par["ubdist"] = par.parubnd_trans - par.bnd_center_trans
         par["parubnd"] = par.center_point + (par.ubdist * par.dialate_factor)
 
         par["parlbnd_org"] = par.parlbnd.copy()
-        par["lbdist"] = par.bnd_center - par.parlbnd_trans
+        par["lbdist"] = par.bnd_center_trans - par.parlbnd_trans
         par["parlbnd"] = par.center_point - (par.lbdist * par.dialate_factor)
         
         par.loc[log_idx,"parubnd"] = 10**par.loc[log_idx,"parubnd"]

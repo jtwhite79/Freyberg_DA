@@ -132,16 +132,10 @@ def compare_mf6_freyberg(num_workers=10,num_reals=100,num_replicates=100,use_sim
         ies_pst.pestpp_options["ies_par_en"] = "prior.jcb"
 
         # set pestpp options for batch da
-        ies_pst.pestpp_options.pop("ies_num_reals", None)
-        ies_pst.pestpp_options.pop("da_num_reals", None)
-        ies_pst.pestpp_options["ies_no_noise"] = False
-        ies_pst.pestpp_options["ies_verbose_level"] = 1
         ies_pst.pestpp_options.pop("ies_localizer", None)
-        ies_pst.pestpp_options["ies_autoadaloc"] = False
-        ies_pst.pestpp_options["ies_save_lambda_en"] = False
-        ies_pst.pestpp_options["ies_drop_conflicts"] = False
         ies_pst.pestpp_options["ies_num_reals"] = num_reals
-        ies_pst.pestpp_options["ies_use_mda"] = False
+        ies_pst.pestpp_options["ies_multimodal_alpha"] = 0.99
+        ies_pst.pestpp_options["ies_n_iter_reinflate"] = [-3,999]
         ies_pst.control_data.noptmax = noptmax
 
         #mark the future pars fixed
@@ -4136,8 +4130,382 @@ def plot_obs_v_sim_pub(subdir=".",post_iter=None):
     pp.close()
 
 
-def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,use_reals="all",num_replicates=None):
-    
+PLS_OBSONLY_PRED_VARIANTS = ("prior", "posterior", "combined")
+
+
+def pls_obsonly_pred_name(variant):
+    """File-name convention for a PLS obs-only predictions cache."""
+    if variant not in PLS_OBSONLY_PRED_VARIANTS:
+        raise ValueError("unknown PLS variant '{0}', want one of {1}".format(
+            variant, PLS_OBSONLY_PRED_VARIANTS))
+    return "pls_obsonly_pred_{0}.csv".format(variant)
+
+
+def _ies_training_ensemble(pst, train_on):
+    """Return the IES obs ensemble used to train the PLS variant.
+
+    ``train_on``:
+
+    * ``"prior"``     - ``pst.ies.obsen0`` (iter-0).
+    * ``"posterior"`` - ``pst.ies.get("obsen", phiactual.iteration.max())``.
+    * ``"combined"``  - all available iterations stacked along axis 0 with
+      row names renamed ``iter:{i}_real:{r}`` to avoid collisions across
+      iters (same convention used by ``dsi_from_ies.pls_from_ies``).
+    """
+    if train_on == "prior":
+        oe = pst.ies.obsen0.copy()
+    elif train_on == "posterior":
+        post_iter = pst.ies.phiactual.iteration.max()
+        oe = pst.ies.get("obsen", post_iter).copy()
+    elif train_on == "combined":
+        max_iter = int(pst.ies.phiactual.iteration.max())
+        blocks = []
+        for itr in range(max_iter + 1):
+            try:
+                sub = pst.ies.get("obsen", itr).copy()
+            except Exception:
+                continue
+            sub.index = ["iter:{0}_real:{1}".format(itr, r) for r in sub.index]
+            blocks.append(sub)
+        if not blocks:
+            raise Exception("no IES obsen iterations available for 'combined'")
+        oe = pd.concat(blocks, axis=0)
+    else:
+        raise ValueError("train_on must be one of {0}, got '{1}'".format(
+            PLS_OBSONLY_PRED_VARIANTS, train_on))
+    oe.columns = oe.columns.astype(str)
+    return oe
+
+
+def run_pls_obs_experiment(num_replicates=None, train_on="prior", verbose=False):
+    """PLS-on-IES-obs experiment for each monthly master IES dir.
+
+    For each ``monthly_model_files_master_*`` directory (excluding ``*_dsi*`` /
+    ``*_pls*`` derivatives):
+
+    * Loads ``freyberg.pst`` and the IES obs ensemble chosen by ``train_on``
+      (see :func:`_ies_training_ensemble`).
+    * Trains a PLS emulator with inputs = nonzero-weight obs, outputs =
+      zero-weight obs.
+    * Predicts with the obs+noise ensemble PESTPP-IES used
+      (``freyberg.obs+noise.csv``) — PLS silently ignores the zero-weight
+      columns in that frame.
+    * Writes the prediction ensemble to
+      ``{master_dir}/{pls_obsonly_pred_name(train_on)}`` so multiple variants
+      can coexist on disk.
+
+    No PEST++ run on the emulator — just train and predict.
+    """
+    from pyemu.emulators import PLS
+
+    if train_on not in PLS_OBSONLY_PRED_VARIANTS:
+        raise ValueError("train_on must be one of {0}, got '{1}'".format(
+            PLS_OBSONLY_PRED_VARIANTS, train_on))
+
+    m_ds = [d for d in os.listdir(".")
+            if os.path.isdir(d) and d.startswith('monthly_model_files_master_')
+            and "dsi" not in d and "pls" not in d]
+    m_ds.sort()
+    if num_replicates is not None:
+        m_ds = m_ds[:num_replicates]
+    if not m_ds:
+        raise Exception("no monthly_model_files_master_* dirs found")
+
+    out_name = pls_obsonly_pred_name(train_on)
+    for m_d in m_ds:
+        pst = pyemu.Pst(os.path.join(m_d, "freyberg.pst"))
+        obs = pst.observation_data
+        nz_names = obs.loc[obs.weight > 0, "obsnme"].values.tolist()
+        zw_names = obs.loc[obs.weight == 0, "obsnme"].values.tolist()
+        if not nz_names:
+            raise Exception("{0}: no nonzero-weight obs to use as PLS inputs".format(m_d))
+        if not zw_names:
+            raise Exception("{0}: no zero-weight obs to use as PLS outputs".format(m_d))
+
+        oe = _ies_training_ensemble(pst, train_on)
+
+        pls = PLS(pst=pst, data=oe,
+                  input_names=nz_names, output_names=zw_names,
+                  verbose=verbose)
+        pls.fit()
+
+        onoise = pd.read_csv(os.path.join(m_d, "freyberg.obs+noise.csv"),
+                             index_col=0)
+        onoise.columns = onoise.columns.astype(str)
+        pred = pls.predict(onoise)
+        out_path = os.path.join(m_d, out_name)
+        pred.to_csv(out_path)
+        print("{0}: trained PLS[train_on={1}] on {2}x{3}, n_components={4}; "
+              "wrote predictions {5} -> {6}".format(
+                  m_d, train_on, oe.shape[0], oe.shape[1],
+                  pls.n_components, pred.shape, out_path))
+
+
+def plot_pls_obs_experiment(subdir=".", time_slices=(12, 24), post_iter=None):
+    """CRPS + 1-to-1 prediction plots for the PLS obs-only experiment.
+
+    Layout per (site, time):
+
+    * One scatter axis per ensemble (IES prior, IES posterior, then one per
+      available PLS variant on disk) showing prediction mean vs true
+      ``obsval`` across replicates with 5/95 quantile bars. The axes share
+      ``xlim`` / ``ylim`` so direct visual comparison is meaningful.
+    * One CRPS log-histogram axis with all ensembles overlaid for the same
+      replicates.
+
+    PLS variants are auto-discovered: any
+    ``{master_dir}/pls_obsonly_pred_{variant}.csv`` that exists for *all*
+    replicates is included. Variants missing on disk are silently skipped.
+
+    ``post_iter`` overrides the IES posterior iteration; default is
+    ``pst.ies.phiactual.iteration.max()``.
+    """
+    import CRPS.CRPS as pscore
+    from scipy import stats
+
+    m_ds = [d for d in os.listdir(".")
+            if os.path.isdir(d) and d.startswith('monthly_model_files_master_')
+            and "dsi" not in d and "pls" not in d]
+    m_ds.sort()
+
+    # Variant -> {master_dir -> predictions df}, only retained if the variant
+    # is present in every replicate that contributed *something*.
+    pls_variant_preds = {v: {} for v in PLS_OBSONLY_PRED_VARIANTS}
+    replicate_data = {}
+    for m_d in m_ds:
+        pst_path = os.path.join(m_d, "freyberg.pst")
+        # Need at least one PLS variant present to bother with this replicate.
+        variant_paths = {v: os.path.join(m_d, pls_obsonly_pred_name(v))
+                         for v in PLS_OBSONLY_PRED_VARIANTS}
+        present = {v: p for v, p in variant_paths.items() if os.path.exists(p)}
+        if not present:
+            print("skipping {0}: no pls_obsonly_pred_*.csv".format(m_d))
+            continue
+
+        pst = pyemu.Pst(pst_path)
+        ies_pr = pst.ies.obsen0.copy()
+        ies_pr.columns = ies_pr.columns.astype(str)
+        bpost = pst.ies.phiactual.iteration.max() if post_iter is None else post_iter
+        ies_pt = pst.ies.get("obsen", bpost).copy()
+        ies_pt.columns = ies_pt.columns.astype(str)
+        replicate_data[m_d] = (pst, ies_pr, ies_pt)
+        for v, p in present.items():
+            df = pd.read_csv(p, index_col=0)
+            df.columns = df.columns.astype(str)
+            pls_variant_preds[v][m_d] = df
+
+    if not replicate_data:
+        raise Exception("no replicates with any pls_obsonly_pred_*.csv present")
+
+    # Keep only PLS variants that produced predictions for at least one
+    # replicate (so the plotting iteration is over real data).
+    active_variants = [v for v in PLS_OBSONLY_PRED_VARIANTS
+                       if pls_variant_preds[v]]
+
+    # Ensemble table: stable order so the scatter columns line up consistently.
+    # (label, key, marker_color, bar_color)
+    ENSEMBLE_STYLE = [
+        ("IES prior",     "ies_pr", "0.5", "0.5"),
+        ("IES posterior", "ies_pt", "m",   "b"),
+    ]
+    pls_palette = {"prior": "C0", "posterior": "C1", "combined": "C2"}
+    for v in active_variants:
+        ENSEMBLE_STYLE.append(
+            ("PLS-" + v, "pls_" + v, pls_palette.get(v, "k"), pls_palette.get(v, "k")))
+
+    def _vals(oname, m_d, key, pst, ies_pr, ies_pt):
+        if key == "ies_pr":
+            df = ies_pr
+        elif key == "ies_pt":
+            df = ies_pt
+        elif key.startswith("pls_"):
+            variant = key[len("pls_"):]
+            preds_for_var = pls_variant_preds[variant]
+            if m_d not in preds_for_var:
+                return None
+            df = preds_for_var[m_d]
+        else:
+            return None
+        if oname not in df.columns:
+            return None
+        v = df.loc[:, oname].astype(float).dropna().values
+        return v if v.size else None
+
+    labels = (["surface-water flux ($\\frac{m^3}{d}$)",
+               "groundwater level ($m$)",
+               "groundwater level ($m$)",
+               "SW-GW flux ($\\frac{m^3}{d}$)"])
+    sites = [keep[-1], keep[0], forecast[2], forecast[1]]
+    names = ["sw_1", "gw_1", "gw forecast", "headwater forecast\n   "]
+
+    pname = os.path.join(subdir, "pls_obs_experiment.pdf")
+    if subdir != ".":
+        pname = pname.replace(".pdf", "_" + subdir + ".pdf")
+
+    sample_pst = next(iter(replicate_data.values()))[0]
+    sbobs_org = sample_pst.observation_data
+    is_1_lay = "k:2" not in " ".join(sample_pst.obs_names)
+
+    n_scatter = len(ENSEMBLE_STYLE)
+    scatter_fig_w = max(11, 3.2 * n_scatter)
+
+    def _overlay_log_hist(ax, log_vals_by_key, style):
+        """Overlay log10 histograms + KDE curves on ``ax`` from {key: array}."""
+        if not log_vals_by_key:
+            return
+        bin_lo = min(arr.min() for arr in log_vals_by_key.values())
+        bin_hi = max(arr.max() for arr in log_vals_by_key.values())
+        if bin_hi <= bin_lo:
+            bin_hi = bin_lo + 1e-6
+        bins = np.linspace(bin_lo, bin_hi, 25)
+        for _lab, key, mcolor, _ in style:
+            if key not in log_vals_by_key:
+                continue
+            v = log_vals_by_key[key]
+            ax.hist(v, bins=bins, density=True, alpha=0.4,
+                    color=mcolor, label=_lab)
+            if v.size > 1 and v.std() > 0:
+                kde = stats.gaussian_kde(v)
+                xx = np.linspace(v.min(), v.max(), 200)
+                ax.plot(xx, kde(xx), color=mcolor, alpha=0.8)
+        ax.set_yticks([])
+        ax.legend(fontsize=8, loc="best")
+
+    with PdfPages(pname) as pdf:
+        # ----- Per master_dir IES measured-phi histogram -----
+        # Just the canonical PESTPP-IES measurement phi at the final iter —
+        # ``pst.ies.phimeas.iloc[-1, 6:]`` (first 6 cols are metadata).
+        for m_d, (pst, _ies_pr, _ies_pt) in replicate_data.items():
+            ies_meas = pst.ies.phimeas.iloc[-1, 6:].astype(float).dropna().values
+            if not ies_meas.size:
+                continue
+            num_nz = int(pst.nnz_obs)
+            fig, ax = plt.subplots(figsize=(8, 4.5))
+            log_vals = np.log10(ies_meas + 1e-30)
+            bin_lo, bin_hi = float(log_vals.min()), float(log_vals.max())
+            if num_nz > 0:
+                # Stretch the histogram x-range so the num-nz-obs vertical
+                # reference line is always visible, even when it sits outside
+                # the realised phi distribution.
+                bin_lo = min(bin_lo, float(np.log10(num_nz)))
+                bin_hi = max(bin_hi, float(np.log10(num_nz)))
+            if bin_hi <= bin_lo:
+                bin_hi = bin_lo + 1e-6
+            bins = np.linspace(bin_lo, bin_hi, 25)
+            ax.hist(log_vals, bins=bins, density=True, alpha=0.5,
+                    color="C0", label="IES measured phi")
+            if log_vals.size > 1 and log_vals.std() > 0:
+                kde = stats.gaussian_kde(log_vals)
+                xx = np.linspace(log_vals.min(), log_vals.max(), 200)
+                ax.plot(xx, kde(xx), color="C0", alpha=0.8)
+            if num_nz > 0:
+                ax.axvline(np.log10(num_nz), color="k", ls="--", lw=1.5,
+                           label="num nz obs = {0}".format(num_nz))
+            ax.set_yticks([])
+            ax.set_xlabel("log10 phi")
+            ax.legend(fontsize=9, loc="best")
+            ax.set_title("MF6-IES measured phi — {0} (final iter, n={1})".format(
+                m_d, ies_meas.size), fontsize=10)
+            plt.tight_layout()
+            pdf.savefig(fig)
+            plt.close(fig)
+
+        # ----- Per (site, time) scatter + (separate) CRPS figures -----
+        for label, ogname, name in zip(labels, sites, names):
+            k0ogname = ogname.replace("k:2", "k:0") if is_1_lay else ogname
+            sgobs = sbobs_org.loc[sbobs_org.obsnme.str.contains(k0ogname), :].copy()
+            sgobs = sgobs.loc[sgobs.obsnme.str.contains("_time"), :]
+            sgobs.loc[:, "time"] = sgobs.time.apply(float)
+            sgobs.sort_values(by="time", inplace=True)
+
+            for itime_target in time_slices:
+                pts = {k: {"x": [], "y": [], "lq": [], "uq": []}
+                       for _, k, _, _ in ENSEMBLE_STYLE}
+                crps_scores = {k: [] for _, k, _, _ in ENSEMBLE_STYLE}
+
+                for itime, oname in enumerate(sgobs.obsnme):
+                    if itime != itime_target:
+                        continue
+                    for m_d, (pst, ies_pr, ies_pt) in replicate_data.items():
+                        cval = float(pst.observation_data.loc[oname, "obsval"])
+                        for _lab, key, _, _ in ENSEMBLE_STYLE:
+                            v = _vals(oname, m_d, key, pst, ies_pr, ies_pt)
+                            if v is None:
+                                continue
+                            pts[key]["x"].append(float(v.mean()))
+                            pts[key]["y"].append(cval)
+                            lq, uq = np.quantile(v, [0.05, 0.95])
+                            pts[key]["lq"].append(float(lq))
+                            pts[key]["uq"].append(float(uq))
+                            try:
+                                crps_scores[key].append(pscore(v, cval).compute()[-1])
+                            except Exception as e:
+                                print("crps failed for {0}/{1}/{2}: {3}".format(
+                                    m_d, oname, key, e))
+
+                if not any(pts[k]["x"] for k in pts):
+                    continue
+
+                # Scatter figure (1-to-1 panels only — CRPS lives elsewhere).
+                fig, scatter_axes = plt.subplots(1, n_scatter,
+                                                 figsize=(scatter_fig_w, 5))
+                if n_scatter == 1:
+                    scatter_axes = np.array([scatter_axes])
+                for ax, (_lab, key, mcolor, bcolor) in zip(scatter_axes, ENSEMBLE_STYLE):
+                    p = pts[key]
+                    if p["x"]:
+                        ax.scatter(p["x"], p["y"], marker="o",
+                                   color=mcolor, alpha=0.85, s=30)
+                        for x, y, lq, uq in zip(p["x"], p["y"], p["lq"], p["uq"]):
+                            ax.plot([lq, uq], [y, y], color=bcolor,
+                                    alpha=0.2, lw=2.0)
+                    ax.set_title("{0}\n{1} {2} t={3}".format(
+                        _lab, label, name, itime_target), fontsize=9)
+                    ax.grid()
+
+                # Shared scatter limits (IES prior excluded from range calc).
+                range_keys = [k for k in pts if k != "ies_pr"]
+                all_x  = sum((pts[k]["x"]  for k in range_keys), [])
+                all_y  = sum((pts[k]["y"]  for k in range_keys), [])
+                all_lq = sum((pts[k]["lq"] for k in range_keys), [])
+                all_uq = sum((pts[k]["uq"] for k in range_keys), [])
+                if not all_x:
+                    for k in pts:
+                        all_x  += pts[k]["x"]
+                        all_y  += pts[k]["y"]
+                        all_lq += pts[k]["lq"]
+                        all_uq += pts[k]["uq"]
+                mn = min(min(all_x), min(all_y), min(all_lq))
+                mx = max(max(all_x), max(all_y), max(all_uq))
+                for ax in scatter_axes:
+                    ax.plot([mn, mx], [mn, mx], "k--", alpha=0.6)
+                    ax.set_xlim(mn, mx); ax.set_ylim(mn, mx)
+                    ax.set_aspect("equal")
+                scatter_axes[0].set_ylabel("true obsval")
+                for ax in scatter_axes:
+                    ax.set_xlabel("prediction mean")
+                plt.tight_layout()
+                pdf.savefig(fig)
+                plt.close(fig)
+
+                # CRPS figure (its own page).
+                fig_c, ax_crps = plt.subplots(figsize=(8, 5))
+                log_per_ens = {k: np.log10(np.array(v) + 1e-30)
+                               for k, v in crps_scores.items() if v}
+                _overlay_log_hist(ax_crps, log_per_ens, ENSEMBLE_STYLE)
+                ax_crps.set_xlabel("log10 CRPS")
+                ax_crps.set_title("CRPS across replicates — {0} {1} t={2}".format(
+                    label, name, itime_target), fontsize=10)
+                plt.tight_layout()
+                pdf.savefig(fig_c)
+                plt.close(fig_c)
+
+    print("wrote", pname)
+
+
+
+def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,use_reals="all",num_replicates=None,use_pls=False):
+    from pyemu.emulators import DSI, DSIAE, PLS
     m_ds = [d for d in os.listdir(".") if os.path.isdir(d) and d.startswith('monthly_model_files_master_') and "dsi" not in d]
     m_ds.sort()
     if num_replicates is not None:
@@ -4170,13 +4538,39 @@ def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,
         else:
             raise NotImplementedError()
         if use_ae:
-            dsi = pyemu.emulators.DSIAE(pst=pst, #optional...
+
+            dsi = DSIAE(pst=pst, #optional...
               data = oe,
               transforms=transforms,
                energy_threshold=0.9999, # the truncated-svd energy threshold
               verbose=True)
+        elif use_pls:
+            # par -> obs PLS: pars are inputs (via pars-as-obs columns in oe),
+            # non-par obs are outputs. The pst uses pars-as-obs so the obs
+            # ensemble already carries the par values — no concat with paren.
+            oe.columns = oe.columns.astype(str)
+            par_names = par.parnme.astype(str).values.tolist()
+            obs_names_all = obs.obsnme.astype(str).values.tolist()
+            data_cols = set(oe.columns)
+            pls_inputs = [n for n in par_names if n in data_cols]
+            par_set = set(pls_inputs)
+            pls_outputs = [n for n in obs_names_all
+                           if n in data_cols and n not in par_set]
+            if not pls_inputs:
+                raise Exception("{0}: no pars overlap obs ensemble".format(m_d))
+            if not pls_outputs:
+                raise Exception("{0}: no non-par obs in obs ensemble".format(m_d))
+            dsi = PLS(pst=pst,
+                      data=oe,
+                      input_names=pls_inputs,
+                      output_names=pls_outputs,
+                      transforms=transforms,
+                      verbose=True)
+            #dsi.fit()
+            #print(dsi.predict(obs.loc[obs.weight>0,"obsval"]))
+            #exit()
         else:
-            dsi = pyemu.emulators.DSI(pst=pst, #optional...
+            dsi = DSI(pst=pst, #optional...
               data = oe,
               transforms=transforms,
                energy_threshold=0.9999, # the truncated-svd energy threshold
@@ -4185,6 +4579,8 @@ def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,
         dsi.fit();
         if use_ae:
             dsi_t_d = m_d + "_dsiae"
+        elif use_pls:
+            dsi_t_d = m_d + "_pls"
         else:
             dsi_t_d = m_d + "_dsi"
 
@@ -4192,8 +4588,17 @@ def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,
         if pretraining is not None:
             dsi_t_d += "_pretrain-" + pretraining
 
-        dpst = dsi.prepare_pestpp(t_d = dsi_t_d,
-                                  use_runstor=True)
+        # Pass the original pst into prepare_pestpp for the PLS branch so the
+        # emulator pst inherits the real parval1 / parlbnd / parubnd / partrans
+        # from the IES control file (PLS in par->obs mode reuses pst's par
+        # names directly). DSI / DSIAE synthesize latent codes so they don't
+        # need it and passing it would also copy pestpp_options that may
+        # reference files absent from the emulator template dir.
+        prepare_kwargs = dict(t_d=dsi_t_d, use_runstor=True)
+        if use_pls:
+            prepare_kwargs["pst"] = pst
+
+        dpst = dsi.prepare_pestpp(**prepare_kwargs)
 
         shutil.copy2(ies_path,os.path.join(dsi_t_d,os.path.split(ies_path)[-1]))
         shutil.copytree("pyemu",os.path.join(dsi_t_d,"pyemu"))
@@ -4228,6 +4633,7 @@ def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,
             if not use_ae:
                 shutil.copy2(os.path.join(m_d,pst.pestpp_options["ies_obs_en"]),os.path.join(dsi_t_d,pst.pestpp_options["ies_obs_en"]))
             else:
+
                 pe = pyemu.ParameterEnsemble.from_binary(pst=None,filename=os.path.join(dsi_t_d,"latent_prior.jcb"))
                 noise = pd.read_csv(os.path.join(m_d,pst.pestpp_options["ies_obs_en"]),index_col=0)
                 noise = noise.iloc[:pe.shape[0],:]
@@ -4238,10 +4644,39 @@ def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,
             raise NotImplementedError()
 
         dpst.pestpp_options["ies_num_reals"] = 500
-        #dpst.pestpp_options["ies_multimodal_alpha"] = 0.99
-        dpst.pestpp_options["ies_n_iter_reinflate"] = [999]
+        dpst.pestpp_options["ies_multimodal_alpha"] = 0.99
+        dpst.pestpp_options["ies_n_iter_reinflate"] = [-2,-3,-4,999]
+        dpst.pestpp_options["ies_bad_phi_sigma"] = 1.5
         #dpst.pestpp_options["ies_use_approx"] = False
         #dpst.pestpp_options["ies_reinflate_factor"] = [0.5,0.5]
+        dpst.pestpp_options["save_binary"] = True
+
+        # PLS: also seed IES on the surrogate with the exact MF6-IES par
+        # draws (selected to match use_reals). Writes the par ensemble into
+        # the template dir and points ies_par_en at it; ies_num_reals is
+        # forced to the actual ensemble size so PEST++ doesn't try to draw
+        # extra/fewer reals. DSI / DSIAE keep PEST++'s default sampling.
+        if use_pls:
+            if use_reals == "prior":
+                mf_pe = pst.ies.paren0.copy()
+            elif use_reals == "posterior":
+                mf_pe = pst.ies.get(
+                    "paren", int(pst.ies.phiactual.iteration.max())).copy()
+            elif use_reals == "all":
+                mf_pe = pst.ies.paren.copy()
+                lev0 = mf_pe.index.get_level_values(0)
+                lev1 = mf_pe.index.get_level_values(1)
+                mf_pe.index = ["{0}-{1}".format(a, b) for a, b in zip(lev0, lev1)]
+            else:
+                raise NotImplementedError(use_reals)
+            mf_pe.columns = mf_pe.columns.astype(str)
+            common_pars = [c for c in mf_pe.columns if c in dpst.parameter_data.index]
+            mf_pe = mf_pe.loc[:, common_pars]
+            par_en_fname = "mf6ies_par_en_{0}.csv".format(use_reals)
+            mf_pe.to_csv(os.path.join(dsi_t_d, par_en_fname))
+            dpst.pestpp_options["ies_par_en"] = par_en_fname
+            dpst.pestpp_options["ies_num_reals"] = int(mf_pe.shape[0])
+
         dpst.control_data.noptmax = noptmax
         dpst.write(os.path.join(dsi_t_d,"dsi.pst"),version=2)
         pyemu.os_utils.run("pestpp-ies dsi.pst /e",cwd=dsi_t_d)
@@ -4270,7 +4705,28 @@ def run_dsi_monthly_dirs(use_ae=False,pretraining=None,num_reals=500,noptmax=15,
        
 
 def _spawn_dsi_process(kwargs):
-    p = mp.Process(target=run_dsi_monthly_dirs,kwargs=kwargs)
+    """Launch one DSI / DSIAE / PLS experiment in its own process.
+
+    ``kwargs`` are forwarded to :func:`run_dsi_monthly_dirs`. To launch
+    multiple experiments in parallel, build a list of arg-dicts and spawn
+    each — e.g. ::
+
+        arg_sets = [
+            dict(pretraining="prior", use_reals="all", noptmax=dsi_noptmax),
+            dict(use_pls=True, use_reals="prior", noptmax=dsi_noptmax),
+            dict(use_pls=True, use_reals="posterior", noptmax=dsi_noptmax),
+            dict(use_pls=True, use_reals="all", noptmax=dsi_noptmax),
+        ]
+        procs = [_spawn_dsi_process(a) for a in arg_sets]
+        for p in procs:
+            p.join()
+
+    Optional escape hatch: pass a ``"_target"`` callable in kwargs to override
+    the default ``run_dsi_monthly_dirs`` target.
+    """
+    kwargs = dict(kwargs)  # don't mutate caller's dict
+    target = kwargs.pop("_target", run_dsi_monthly_dirs)
+    p = mp.Process(target=target, kwargs=kwargs)
     p.start()
     return p
 
@@ -4394,31 +4850,43 @@ if __name__ == "__main__":
     #### MAIN WORKFLOW ####
     #coarse scenario
 
+
     
-    num_replicates = 50
+    num_replicates = 13
     num_reals = 100
     noptmax = 10
-    
-    dsi_noptmax = 10
+    dsi_noptmax = 20
     
     # sync_phase(s_d = "monthly_model_files_1lyr_org")
     # add_new_stress(m_d_org = "monthly_model_files_1lyr")
-    # c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
+    #c_d = setup_interface("daily_model_files_newstress",num_reals=num_replicates)
     # b_d = setup_interface("monthly_model_files_1lyr_newstress",num_reals=num_reals,complex_pars=True,relax=False)
-    # m_c_d = run_complex_prior_mc(c_d,num_workers=10)
+    #m_c_d = run_complex_prior_mc(c_d,num_workers=10)
     # b_d = map_complex_to_simple_bat("daily_model_files_master_prior",b_d,0)
     
-    # compare_mf6_freyberg(num_workers=20, num_replicates=num_replicates,num_reals=num_reals,use_sim_states=False,
+    #compare_mf6_freyberg(num_workers=20, num_replicates=num_replicates,num_reals=num_reals,use_sim_states=False,
     #                     run_ies=True,run_da=False,adj_init_states=False,noptmax=10)
 
-    arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining=None,use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
-                 dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)]
+    # arg_sets = [dict(pretraining="posterior",use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining="prior",use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining=None,use_reals="prior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining=None,use_reals="posterior",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining=None,use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining="posterior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax),
+    #              dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax)]
 
+    #run_pls_obs_experiment(num_replicates=num_replicates,verbose=True)
+    #run_pls_obs_experiment(num_replicates=num_replicates,verbose=True,train_on="posterior")
+    #run_pls_obs_experiment(num_replicates=num_replicates,verbose=True,train_on="combined")
+    #plot_pls_obs_experiment(subdir=".", time_slices=(12,16,24))
+    #exit()
+    #arg_sets = [dict(pretraining="prior",use_reals="all",num_replicates=num_replicates,noptmax=dsi_noptmax,use_pls=True)]
+
+    arg_sets = [dict(use_pls=True, use_reals="prior",     num_replicates=num_replicates,noptmax=dsi_noptmax)]#,
+              #     dict(use_pls=True, use_reals="posterior", num_replicates=num_replicates,noptmax=dsi_noptmax),
+              #     dict(use_pls=True, use_reals="all",       num_replicates=num_replicates,noptmax=dsi_noptmax),
+              # ]
+  
     procs = []
     for arg_set in arg_sets:
         p = _spawn_dsi_process(arg_set)
